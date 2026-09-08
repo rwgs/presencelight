@@ -286,7 +286,11 @@
     {
         MultiTenant = entraMultiTenant,
         SkipAdminConsent = entraSkipAdminConsent,
-        SettingsPath = localConfigurationPath
+        SettingsPath = localConfigurationPath,
+
+        // Setup runs with no window of its own, so brokered sign-in cannot attach to one and fails
+        // with "A window handle must be configured". A device code needs no window at all.
+        UseDeviceCode = true
     };
 
     async Task CreateRegistration()
@@ -294,15 +298,29 @@
         entraRunning = true;
         entraOutput = string.Empty;
         entraSeverity = MudBlazor.Severity.Info;
-        entraStatus = "Sign in and approve the prompt in your browser. The first run also installs the Microsoft Graph modules, which takes a few minutes.";
+        entraStatus = "Starting. The first run installs the Microsoft Graph modules, which takes a few minutes. A sign-in code will appear here.";
 
         // Interactive sign-in and a first-run module install are both slow, so the operation is
-        // bounded rather than left to hang if the browser is closed without completing.
+        // bounded rather than left to hang if sign-in is never completed.
         entraCancellation = new CancellationTokenSource(TimeSpan.FromMinutes(15));
+
+        // Sign-in reports a code the operator has to enter, so output is shown as it arrives rather
+        // than only once setup has finished.
+        var progress = new Progress<string>(line =>
+        {
+            entraOutput += line + Environment.NewLine;
+
+            if (line.Contains("enter the code", StringComparison.OrdinalIgnoreCase))
+            {
+                entraStatus = line.Trim();
+            }
+
+            InvokeAsync(StateHasChanged);
+        });
 
         try
         {
-            EntraSetupResult result = await EntraSetup.CreateRegistrationAsync(BuildEntraRequest(), entraCancellation.Token);
+            EntraSetupResult result = await EntraSetup.CreateRegistrationAsync(BuildEntraRequest(), progress, entraCancellation.Token);
 
             entraOutput = result.Output;
             entraStatus = result.Message;

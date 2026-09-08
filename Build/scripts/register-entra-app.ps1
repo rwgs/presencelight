@@ -36,6 +36,10 @@
     Create the registration without granting tenant-wide consent. Each user is then prompted to
     consent at first sign-in, which works because both default permissions are user-consentable.
 
+.PARAMETER UseDeviceCode
+    Sign in with a device code instead of opening a browser directly. Use this where no browser can
+    be opened for the script. Browser sign-in already falls back to this automatically on failure.
+
 .EXAMPLE
     .\Build\scripts\register-entra-app.ps1
 
@@ -50,7 +54,8 @@ param(
     [string]$Audience = 'SingleTenant',
     [string[]]$DelegatedPermissions = @('Presence.Read', 'User.Read'),
     [string]$SettingsPath,
-    [switch]$SkipAdminConsent
+    [switch]$SkipAdminConsent,
+    [switch]$UseDeviceCode
 )
 
 Set-StrictMode -Version Latest
@@ -86,12 +91,46 @@ if (-not $SkipAdminConsent) {
 }
 
 Write-Step 'Signing in to Microsoft Graph'
-Write-Host 'A browser window will open. Sign in with an account that may register applications.'
-Write-Host 'The consent prompt names "Microsoft Graph Command Line Tools"; approve it as an administrator.'
+
+# Brokered sign-in through the Windows Account Manager needs a parent window handle, which does not
+# exist when this script runs from a hidden or output-redirected process such as the Settings page.
+# Without this it fails with "A window handle must be configured".
+if (Get-Command Set-MgGraphOption -ErrorAction SilentlyContinue) {
+    try
+    {
+        Set-MgGraphOption -DisableLoginByWAM $true | Out-Null
+    }
+    catch
+    {
+        Write-Host "Could not disable brokered sign-in: $($_.Exception.Message)"
+    }
+}
 
 $connectArgs = @{ Scopes = $scopes; NoWelcome = $true }
 if ($TenantId) { $connectArgs['TenantId'] = $TenantId }
-Connect-MgGraph @connectArgs
+
+if ($UseDeviceCode)
+{
+    Write-Host 'Open the address shown below and enter the code to sign in.'
+    Connect-MgGraph @connectArgs -UseDeviceAuthentication
+}
+else
+{
+    Write-Host 'A browser window will open. Sign in with an account that may register applications.'
+    Write-Host 'The consent prompt names "Microsoft Graph Command Line Tools"; approve it as an administrator.'
+
+    try
+    {
+        Connect-MgGraph @connectArgs
+    }
+    catch
+    {
+        # A browser cannot always be opened, so fall back rather than failing the whole run.
+        Write-Host "Browser sign-in did not work: $($_.Exception.Message)"
+        Write-Host 'Falling back to device code sign-in.'
+        Connect-MgGraph @connectArgs -UseDeviceAuthentication
+    }
+}
 
 $context = Get-MgContext
 if (-not $context) {

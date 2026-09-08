@@ -60,7 +60,7 @@ namespace PresenceLight.Services
         public string DescribeCommand(EntraSetupRequest request) => EntraSetupCommand.Build(request);
 
         /// <inheritdoc />
-        public async Task<EntraSetupResult> CreateRegistrationAsync(EntraSetupRequest request, CancellationToken cancellationToken = default)
+        public async Task<EntraSetupResult> CreateRegistrationAsync(EntraSetupRequest request, IProgress<string>? progress = null, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(request);
 
@@ -92,8 +92,8 @@ namespace PresenceLight.Services
             {
                 using var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
 
-                process.OutputDataReceived += (_, e) => AppendLine(output, e.Data);
-                process.ErrorDataReceived += (_, e) => AppendLine(output, e.Data);
+                process.OutputDataReceived += (_, e) => AppendLine(output, e.Data, progress);
+                process.ErrorDataReceived += (_, e) => AppendLine(output, e.Data, progress);
 
                 _logger.LogInformation("Starting the Entra registration script");
 
@@ -190,7 +190,7 @@ namespace PresenceLight.Services
             }
         }
 
-        private static void AppendLine(StringBuilder builder, string? line)
+        private static void AppendLine(StringBuilder builder, string? line, IProgress<string>? progress)
         {
             if (line != null)
             {
@@ -198,6 +198,8 @@ namespace PresenceLight.Services
                 {
                     builder.AppendLine(line);
                 }
+
+                progress?.Report(line);
             }
         }
 
@@ -233,6 +235,11 @@ namespace PresenceLight.Services
             if (request.SkipAdminConsent)
             {
                 arguments.Add("-SkipAdminConsent");
+            }
+
+            if (request.UseDeviceCode)
+            {
+                arguments.Add("-UseDeviceCode");
             }
 
             if (!string.IsNullOrWhiteSpace(request.TenantId))

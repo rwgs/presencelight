@@ -28,6 +28,13 @@ namespace PresenceLight.Core
         public bool SkipAdminConsent { get; set; }
 
         /// <summary>
+        /// Gets or sets a value indicating whether to sign in with a device code rather than by
+        /// opening a browser directly. Required when nothing can provide a parent window, such as
+        /// when the setup script is run from the application with its output redirected.
+        /// </summary>
+        public bool UseDeviceCode { get; set; }
+
+        /// <summary>
         /// Gets or sets the tenant to sign in to. Null uses the tenant of the account chosen at sign-in.
         /// </summary>
         public string? TenantId { get; set; }
@@ -93,7 +100,11 @@ namespace PresenceLight.Core
         /// <summary>
         /// Creates or updates the registration and writes its identifiers to the settings file.
         /// </summary>
-        Task<EntraSetupResult> CreateRegistrationAsync(EntraSetupRequest request, CancellationToken cancellationToken = default);
+        /// <param name="progress">
+        /// Receives each line of output as it is produced. Sign-in can require the operator to act on
+        /// what is reported, such as entering a device code, so output cannot wait until completion.
+        /// </param>
+        Task<EntraSetupResult> CreateRegistrationAsync(EntraSetupRequest request, IProgress<string>? progress = null, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Gets the equivalent command, so the same work can be done manually if creation is unavailable.
@@ -160,7 +171,7 @@ namespace PresenceLight.Core
             "Creating an application registration is only available in the desktop application. Run the setup script manually instead.";
 
         /// <inheritdoc />
-        public Task<EntraSetupResult> CreateRegistrationAsync(EntraSetupRequest request, CancellationToken cancellationToken = default)
+        public Task<EntraSetupResult> CreateRegistrationAsync(EntraSetupRequest request, IProgress<string>? progress = null, CancellationToken cancellationToken = default)
         {
             return Task.FromResult(new EntraSetupResult
             {
@@ -208,6 +219,11 @@ namespace PresenceLight.Core
             if (request.SkipAdminConsent)
             {
                 command += " -SkipAdminConsent";
+            }
+
+            if (request.UseDeviceCode)
+            {
+                command += " -UseDeviceCode";
             }
 
             if (!string.IsNullOrWhiteSpace(request.TenantId))
