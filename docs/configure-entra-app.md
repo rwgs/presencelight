@@ -47,6 +47,9 @@ Running the script again updates the existing registration rather than creating 
 `-Audience MultiTenant` if accounts from other organisations must sign in, and `-SettingsPath` to
 write somewhere other than the repository root. Neither identifier the script prints is a secret.
 
+Neither identifier is a secret, and the registration is not publisher verified. See
+[publisher-verification.md](publisher-verification.md) for what that affects and when it matters.
+
 ### Manual (portal)
 
 1. Sign in to the [Microsoft Entra admin center](https://entra.microsoft.com/) using either a work or school account or a personal Microsoft account.
