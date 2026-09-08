@@ -1,0 +1,63 @@
+# Builds the desktop application and publishes it as a downloadable artifact.
+#
+# The existing Deploy_Desktop workflow signs and publishes through upstream channels and needs
+# secrets this fork does not have. This workflow only produces a self-contained build that can be
+# downloaded from the run summary and copied to another computer, which needs no secrets at all.
+#
+# The build is self-contained, so the target computer does not need the .NET runtime installed.
+# It carries no Entra identifiers: configure those in the application through Settings on first run.
+
+name: Build Desktop Artifact
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches: [ main, 'restore/**' ]
+    paths:
+    - 'src/**'
+    - 'Build/scripts/register-entra-app.ps1'
+    - '.github/workflows/Build_Desktop_Artifact.yml'
+
+jobs:
+
+  Build_Desktop:
+    name: Build Self-Contained Desktop Build
+    runs-on: windows-latest
+
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+      DOTNET_NOLOGO: true
+      BuildConfiguration: Release
+      RuntimeIdentifier: win-x64
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install .NET SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Restore
+      run: dotnet restore src/DesktopClient/PresenceLight/PresenceLight.csproj -r ${{ env.RuntimeIdentifier }}
+
+    - name: Publish
+      run: >
+        dotnet publish src/DesktopClient/PresenceLight/PresenceLight.csproj
+        -c ${{ env.BuildConfiguration }}
+        -r ${{ env.RuntimeIdentifier }}
+        --self-contained true
+        --no-restore
+        -p:ChannelName=Standalone
+        -o publish
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: PresenceLight-${{ env.RuntimeIdentifier }}
+        path: publish
+        retention-days: 30
+        if-no-files-found: error
