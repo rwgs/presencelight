@@ -4,7 +4,7 @@ Status: Planned, 2026-09-08. This is the current implementation approach, not ev
 
 ## Problem
 
-The user wants the existing app working again. The exact desktop failure has not been reproduced. The first useful result is one business account reliably driving a Hue light. Multi-account support is absent today and deliberately deferred.
+The user wants the existing app working again. The original failure is now explained: upstream issue 978 records that the published application registration lives in Microsoft's tenant and no longer works for people outside Microsoft, so installed releases stopped signing in. The repair is therefore a registration this project owns, not a code fault. T1 confirmed the other half: the desktop application builds and starts unmodified once a .NET 10 SDK is available, so there is no compile or startup fault to repair. The remaining gap is configuration and unproven runtime behaviour: no Entra client identifier is configured, and neither Graph presence nor Hue control has been exercised. The first useful result is one business account reliably driving a Hue light. Multi-account support is absent today and deliberately deferred.
 
 ## Constraints discovered
 

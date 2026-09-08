@@ -35,13 +35,23 @@ Restore the PresenceLight Windows desktop app so one Microsoft 365 business acco
 
 ## Commands
 
-Run from the repository root on Windows. These are project-targeted baseline commands, not a claim that a successful build or launch has been verified:
+Run from the repository root on Windows. The restore, build and launch below were verified on 2026-09-08; see T1 in [TASKS.md](TASKS.md) for the recorded output.
+
+The .NET 10 SDK is installed for the current user only at `%LOCALAPPDATA%\Microsoft\dotnet` (SDK 10.0.401 with the 10.0.12 NETCore, AspNetCore and WindowsDesktop runtimes) and is deliberately not on the machine `PATH`. Start each shell session with:
+
+```powershell
+$env:PATH = "$env:LOCALAPPDATA\Microsoft\dotnet;$env:PATH"
+$env:DOTNET_ROOT = "$env:LOCALAPPDATA\Microsoft\dotnet"
+```
+
+`DOTNET_ROOT` is required to run the built executable. Without it the apphost searches the machine-wide runtime location and exits with `0x80008083` (`CoreHostLibMissingFailure`) before any application code runs; that exit code is a toolchain symptom, not an application fault. `run-presencelight.cmd` sets it and starts the application from the repository root, so the built executable can also be launched from Explorer.
 
 ```powershell
 dotnet --info
 dotnet restore .\src\DesktopClient\PresenceLight\PresenceLight.csproj
 dotnet build .\src\DesktopClient\PresenceLight\PresenceLight.csproj -c Debug --no-restore -p:ChannelName=Standalone
 dotnet run --project .\src\DesktopClient\PresenceLight\PresenceLight.csproj -c Debug -p:ChannelName=Standalone
+.\Build\scripts\run-presencelight.cmd
 git diff --check
 git status --short
 ```
