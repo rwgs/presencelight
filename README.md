@@ -47,6 +47,14 @@
 | Any light which can be controlled via a GET or POST call to a web API |
 
 ## Docs
+
+- [Specification and acceptance criteria](SPEC.md)
+- [Roadmap](ROADMAP.md)
+- [Current implementation plan](PLAN.md)
+- [Tasks and validation status](TASKS.md)
+- [Project decisions](DECISIONS.md)
+- [Agent instructions](AGENTS.md)
+- [Changelog](CHANGELOG.md)
 - [Configure Hardware](docs/configure-hardware.md)
 - [FAQ](docs/faq.mdFAQ)
 - [Configure Custom Api Endpoint](docs/configure-custom-api.md)
