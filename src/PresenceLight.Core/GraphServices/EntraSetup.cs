@@ -1,4 +1,5 @@
 using System;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -182,6 +183,57 @@ namespace PresenceLight.Core
 
         /// <inheritdoc />
         public string DescribeCommand(EntraSetupRequest request) => EntraSetupCommand.Build(request);
+    }
+
+    /// <summary>
+    /// The sign-in address and code that device code authentication reports.
+    /// </summary>
+    public class EntraDeviceCodePrompt
+    {
+        /// <summary>
+        /// Gets or sets the address the operator must open.
+        /// </summary>
+        public string Url { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Gets or sets the code the operator must enter.
+        /// </summary>
+        public string Code { get; set; } = string.Empty;
+
+        private static readonly Regex CodePattern = new(@"enter the code\s+(?<code>[A-Za-z0-9][A-Za-z0-9\-]*)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex UrlPattern = new(@"https?://[^\s""'<>]+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        /// <summary>
+        /// Reads the sign-in address and code out of a line of setup output.
+        /// </summary>
+        /// <remarks>
+        /// Device code sign-in reports a line of the form "To sign in, use a web browser to open the
+        /// page https://microsoft.com/devicelogin and enter the code ABCD1234 to authenticate."
+        /// The operator cannot continue without both values, so they are lifted out of the output
+        /// and presented on their own rather than left for the reader to find.
+        /// </remarks>
+        public static EntraDeviceCodePrompt? Parse(string? line)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                return null;
+            }
+
+            Match code = CodePattern.Match(line);
+
+            if (!code.Success)
+            {
+                return null;
+            }
+
+            Match url = UrlPattern.Match(line);
+
+            return new EntraDeviceCodePrompt
+            {
+                Url = url.Success ? url.Value.TrimEnd('.', ',') : "https://microsoft.com/devicelogin",
+                Code = code.Groups["code"].Value
+            };
+        }
     }
 
     /// <summary>

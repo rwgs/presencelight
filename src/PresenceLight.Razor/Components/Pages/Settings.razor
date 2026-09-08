@@ -83,6 +83,31 @@
                                 Equivalent command: @setupCommand
                             </MudText>
 
+                            @if (entraPrompt != null)
+                            {
+                                <MudPaper Class="pa-3 mt-2" Outlined="true">
+                                    <MudText Typo="Typo.subtitle2" Align="Align.Left">Sign in to continue</MudText>
+                                    <MudText Typo="Typo.body2" Align="Align.Left">
+                                        Open the address below, enter the code, and sign in with an account that may
+                                        register applications. Setup continues on its own afterwards.
+                                    </MudText>
+                                    <MudGrid Class="mt-1" Spacing="2">
+                                        <MudItem xs="12" sm="8">
+                                            <MudTextField T="string" Label="Sign-in address" Variant="Variant.Outlined" ReadOnly="true" Value="@entraPrompt.Url" />
+                                        </MudItem>
+                                        <MudItem xs="12" sm="4">
+                                            <MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Primary" OnClick="@OpenDeviceUrl">Open sign-in page</MudButton>
+                                        </MudItem>
+                                        <MudItem xs="12" sm="8">
+                                            <MudTextField T="string" Label="Code" Variant="Variant.Outlined" ReadOnly="true" Value="@entraPrompt.Code" />
+                                        </MudItem>
+                                        <MudItem xs="12" sm="4">
+                                            <MudButton Variant="Variant.Outlined" Color="MudBlazor.Color.Primary" OnClick="@CopyDeviceCode">Copy code</MudButton>
+                                        </MudItem>
+                                    </MudGrid>
+                                </MudPaper>
+                            }
+
                             @if (!string.IsNullOrEmpty(entraStatus))
                             {
                                 <MudAlert Severity="@entraSeverity" Class="mt-2">@entraStatus</MudAlert>
@@ -278,6 +303,7 @@
     string entraOutput = string.Empty;
     MudBlazor.Severity entraSeverity = MudBlazor.Severity.Info;
     string consentTenant = string.Empty;
+    EntraDeviceCodePrompt entraPrompt;
     CancellationTokenSource entraCancellation;
 
     string setupCommand => EntraSetup.DescribeCommand(BuildEntraRequest());
@@ -310,9 +336,12 @@
         {
             entraOutput += line + Environment.NewLine;
 
-            if (line.Contains("enter the code", StringComparison.OrdinalIgnoreCase))
+            EntraDeviceCodePrompt prompt = EntraDeviceCodePrompt.Parse(line);
+
+            if (prompt != null)
             {
-                entraStatus = line.Trim();
+                entraPrompt = prompt;
+                entraStatus = "Waiting for you to sign in with the code below.";
             }
 
             InvokeAsync(StateHasChanged);
@@ -362,6 +391,47 @@
     void CancelRegistration()
     {
         entraCancellation?.Cancel();
+    }
+
+    void OpenDeviceUrl()
+    {
+        if (entraPrompt == null)
+        {
+            return;
+        }
+
+        try
+        {
+            Helpers.OpenBrowser(entraPrompt.Url);
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Error opening the device sign-in page");
+            entraStatus = $"Could not open a browser. Go to {entraPrompt.Url} and enter {entraPrompt.Code}.";
+            entraSeverity = MudBlazor.Severity.Warning;
+        }
+    }
+
+    async Task CopyDeviceCode()
+    {
+        if (entraPrompt == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await js.InvokeVoidAsync("navigator.clipboard.writeText", entraPrompt.Code);
+            entraStatus = "Code copied. Enter it on the sign-in page.";
+            entraSeverity = MudBlazor.Severity.Info;
+        }
+        catch (Exception e)
+        {
+            // Clipboard access can be refused, and the code is still readable in the field above.
+            _logger.LogWarning(e, "Could not copy the device code to the clipboard");
+            entraStatus = $"Could not copy automatically. The code is {entraPrompt.Code}.";
+            entraSeverity = MudBlazor.Severity.Warning;
+        }
     }
 
     void GrantConsentInTenant()

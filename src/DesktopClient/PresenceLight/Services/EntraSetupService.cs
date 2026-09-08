@@ -118,10 +118,19 @@ namespace PresenceLight.Services
                 if (process.ExitCode != 0)
                 {
                     _logger.LogWarning("The Entra registration script exited with code {ExitCode}", process.ExitCode);
+
+                    string? transcript = TryWriteTranscript(captured);
+                    string message = "Setup did not complete. The output below explains why.";
+
+                    if (transcript != null)
+                    {
+                        message += $" A copy was saved to {transcript}.";
+                    }
+
                     return new EntraSetupResult
                     {
                         Succeeded = false,
-                        Message = "Setup did not complete. The output below explains why.",
+                        Message = message,
                         Output = captured
                     };
                 }
@@ -172,6 +181,36 @@ namespace PresenceLight.Services
                     Message = $"Setup could not be started: {e.Message}",
                     Output = output.ToString()
                 };
+            }
+        }
+
+        /// <summary>
+        /// Saves the captured output so a failed run can be diagnosed after the window is closed.
+        /// </summary>
+        /// <remarks>
+        /// The transcript names the account that signed in, so it is written beside the application's
+        /// own logs on this machine and is never sent anywhere.
+        /// </remarks>
+        private static string? TryWriteTranscript(string content)
+        {
+            try
+            {
+                string directory = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "PresenceLight",
+                    "logs");
+
+                Directory.CreateDirectory(directory);
+
+                string path = Path.Combine(directory, $"entra-setup-{DateTime.Now:yyyyMMdd-HHmmss}.log");
+                File.WriteAllText(path, content);
+
+                return path;
+            }
+            catch (Exception)
+            {
+                // Diagnostics are best effort; the output is shown in the application regardless.
+                return null;
             }
         }
 
