@@ -62,7 +62,15 @@ status, which is why the shared registration could not be recreated outside Micr
 ## Code signing
 
 Windows warns about software from an unknown publisher because the build is unsigned. Removing the
-warning requires a code signing certificate. Since June 2023 the private key must be held in
+warning requires a code signing certificate.
+
+Signing matters more than the warning alone suggests. An unsigned local build of this application was
+blocked outright by Microsoft Defender Attack Surface Reduction on a managed device, not merely
+warned about. The rule most likely responsible blocks executables that fail prevalence, age or
+trusted-list criteria, which a freshly built unsigned file always does. Moving the file, including
+into the user's home directory, does not change that, because the decision is about the file rather
+than its location. On a device whose policy is managed by someone else, the realistic options are a
+signed build, an exclusion added by whoever administers the device, or not running it there at all. Since June 2023 the private key must be held in
 certified hardware or a cloud service, so inexpensive file-based certificates no longer exist.
 
 ### Azure Artifact Signing

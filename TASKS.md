@@ -51,6 +51,7 @@ Status: T1 complete; the desktop application builds and starts. Sign-in configur
   - Acceptance: Phase 1 exit criteria pass with measured latency/recovery and documented environmental limitations; no elevation at runtime.
   - Automated validation: desktop build, affected shared builds and established regression suite.
   - Manual validation: standard-user launch and working-day trial; record missed transitions and all required scenario results.
+  - Known environmental limitation: a locally built, unsigned executable was blocked by Microsoft Defender Attack Surface Reduction on a second, managed device, including when run from the user's home directory. Relocating the files does not help, because the relevant rule judges the file's signature, prevalence and age rather than its path. This does not affect the monitoring design: presence is read from Graph per account, so the application only needs to run on one machine the user controls. Treat installation on a managed device as out of scope unless the build is code signed or the device's administrator adds an exclusion; see [publisher-verification.md](docs/publisher-verification.md).
   - Dependencies: T1-T7 and agreed latency/freshness acceptance thresholds. Installer/update publication belongs to a later phase.
 
 ## Validation status
