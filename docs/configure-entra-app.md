@@ -1,6 +1,54 @@
 
 ## Configure an Entra ID Application
 
+PresenceLight is a public client. It needs an application (client) identifier and a tenant
+identifier, and it never uses a client secret. Choose either the scripted or the manual route
+below; both produce the same registration.
+
+### From the application (recommended)
+
+Start PresenceLight, open **Settings**, and use **Create app registration** under *Application
+registration*. A browser opens for sign-in, and the identifiers are filled in and saved for you.
+
+Two options sit above the button. *Allow accounts in other organisations* makes the registration
+multi-tenant, which is needed when the accounts to monitor do not all belong to one tenant.
+*Skip tenant-wide admin consent* creates the registration without granting consent for the whole
+organisation, so each user consents at their first sign-in instead.
+
+Once a multi-tenant registration exists, an additional tenant is onboarded from the same panel:
+enter the tenant under *Add another tenant* and choose **Open consent page**. An administrator of
+that tenant approves it once. No second registration is needed.
+
+The button requires PowerShell 7 (`pwsh`), because it runs the script described below. If PowerShell
+7 is missing the panel says so and shows the command to run instead.
+
+### Scripted
+
+Run the following from the repository root in PowerShell 7:
+
+```powershell
+.\Build\scripts\register-entra-app.ps1
+```
+
+The script installs the two Microsoft Graph PowerShell modules it needs for the current user, opens
+a browser for sign-in, creates the registration as a public client with the `http://localhost`
+redirect URI and delegated `Presence.Read` and `User.Read`, grants tenant-wide admin consent, and
+writes the identifiers into `settings.json` in the repository root.
+
+The sign-in prompt asks for approval of **Microsoft Graph Command Line Tools**, which is Microsoft's
+own client for administering a tenant from the command line. Approving it is the administrator step;
+everything after it is automated. Creating the registration requires an account permitted to
+register applications, and granting tenant-wide consent requires an administrator role. Add
+`-SkipAdminConsent` to create the registration without tenant-wide consent, in which case each user
+consents at first sign-in; both default permissions are user-consentable, so that works without an
+administrator.
+
+Running the script again updates the existing registration rather than creating a duplicate. Use
+`-Audience MultiTenant` if accounts from other organisations must sign in, and `-SettingsPath` to
+write somewhere other than the repository root. Neither identifier the script prints is a secret.
+
+### Manual (portal)
+
 1. Sign in to the [Microsoft Entra admin center](https://entra.microsoft.com/) using either a work or school account or a personal Microsoft account.
 1. If your account gives you access to more than one tenant, select your account in the top right corner, and set your portal session to the desired Azure AD tenant
    (using **Switch Directory**).

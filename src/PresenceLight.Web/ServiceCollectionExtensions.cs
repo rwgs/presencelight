@@ -35,6 +35,10 @@ namespace PresenceLight.Web
             services.Configure<BaseConfig>(Configuration);
             services.AddSingleton<ISettingsService, WebAppSettingsService>();
 
+            // The shared settings page offers to create the Entra registration; the web host cannot
+            // run the interactive setup script, so it reports that and shows the command instead.
+            services.AddSingleton<IEntraSetupService, UnsupportedEntraSetupService>();
+
             services.AddOptions();
             services.AddSingleton<AppState>();
             services.AddSingleton<AppInfo, AppInfo>();
