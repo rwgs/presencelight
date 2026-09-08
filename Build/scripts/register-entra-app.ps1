@@ -61,6 +61,25 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Errors are terminating, so report what failed and where before exiting. Without this the caller
+# sees only a non-zero exit code, which is not enough to tell a permissions problem from a bug.
+trap
+{
+    Write-Host ''
+    Write-Host 'Setup failed.'
+    Write-Host "Reason  : $($_.Exception.Message)"
+    Write-Host "Type    : $($_.Exception.GetType().FullName)"
+    Write-Host "Command : $($_.InvocationInfo.MyCommand)"
+    Write-Host "Line $($_.InvocationInfo.ScriptLineNumber): $($_.InvocationInfo.Line.Trim())"
+
+    if ($_.ErrorDetails -and $_.ErrorDetails.Message)
+    {
+        Write-Host "Details : $($_.ErrorDetails.Message)"
+    }
+
+    exit 1
+}
+
 $graphAppId = '00000003-0000-0000-c000-000000000000'
 $instance = 'https://login.microsoftonline.com/'
 
