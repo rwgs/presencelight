@@ -7,6 +7,7 @@ using HueApi;
 using HueApi.BridgeLocator;
 using HueApi.ColorConverters.Original.Extensions;
 using HueApi.Models;
+using HueApi.Models.Exceptions;
 using HueApi.Models.Requests;
 
 using Microsoft.Extensions.Logging;
@@ -169,24 +170,51 @@ namespace PresenceLight.Core
             }
         }
 
-        //Need to wire up a way to do this without user intervention
+        // The bridge only accepts a registration while its link button is pressed, so a
+        // single attempt fails whenever it races the press. Keep asking for the length of
+        // the bridge's link window instead, which lets the button be pressed before or
+        // after the request starts.
+        private static readonly TimeSpan LinkButtonWindow = TimeSpan.FromSeconds(30);
+        private static readonly TimeSpan LinkButtonRetryInterval = TimeSpan.FromSeconds(2);
+
         public async Task<string> RegisterBridge()
         {
-            if (string.IsNullOrEmpty(_appState.Config.LightSettings.Hue.HueApiKey))
+            if (!string.IsNullOrEmpty(_appState.Config.LightSettings.Hue.HueApiKey))
+            {
+                return _appState.Config.LightSettings.Hue.HueApiKey;
+            }
+
+            _logger.LogInformation("Registering with Hue Bridge - Please press the button on your bridge");
+
+            DateTime giveUpAt = DateTime.UtcNow.Add(LinkButtonWindow);
+            while (true)
             {
                 try
                 {
-                    _logger.LogInformation("Registering with Hue Bridge - Please press the button on your bridge");
                     var result = await LocalHueApi.RegisterAsync(_appState.Config.LightSettings.Hue.HueIpAddress, "PresenceLight", Environment.MachineName, true);
-                    return result.Username; // RegisterAsync returns RegisterEntertainmentResult with Username property
+                    if (!string.IsNullOrEmpty(result?.Username)) // RegisterAsync returns RegisterEntertainmentResult with Username property
+                    {
+                        return result.Username;
+                    }
+                }
+                catch (LinkButtonNotPressedException)
+                {
+                    // Expected until the button is pressed; keep waiting for the link window.
                 }
                 catch (Exception e)
                 {
                     _logger.LogError(e, "Error Occurred Registering Bridge");
                     return String.Empty;
                 }
+
+                if (DateTime.UtcNow >= giveUpAt)
+                {
+                    _logger.LogError("Hue Bridge link button was not pressed within {Seconds} seconds", LinkButtonWindow.TotalSeconds);
+                    return String.Empty;
+                }
+
+                await Task.Delay(LinkButtonRetryInterval);
             }
-            return _appState.Config.LightSettings.Hue.HueApiKey;
         }
 
         public async Task<string> FindBridge()
