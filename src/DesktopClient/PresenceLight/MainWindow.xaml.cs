@@ -505,6 +505,9 @@ namespace PresenceLight
         {
             bool previousWorkingHours = false;
             string previousLightMode = string.Empty;
+            string? previousAvailability = null;
+            string? previousActivity = null;
+            DateTime previousPresenceObservedAt = DateTime.MinValue;
             while (true)
             {
                 isInteractRunning = true;
@@ -612,6 +615,31 @@ namespace PresenceLight
                                     _logger.LogInformation("PresenceLight Running in Teams Mode");
 
                                     _appState.SetPresence(await System.Threading.Tasks.Task.Run(() => GetPresence()));
+
+                                    // Only the resulting colour was recorded, and several statuses are configured
+                                    // with the same colour, so the log could not say which presence produced it.
+                                    // Record each change and how long the previous one was held, which is what
+                                    // makes the mapping and the observed delay checkable after the fact.
+                                    string? availability = _appState.Presence.Availability;
+                                    string? activity = _appState.Presence.Activity;
+
+                                    if (availability != previousAvailability || activity != previousActivity)
+                                    {
+                                        DateTime observedAt = DateTime.Now;
+
+                                        if (previousAvailability is null)
+                                        {
+                                            _logger.LogInformation($"Presence read as {availability}/{activity}");
+                                        }
+                                        else
+                                        {
+                                            _logger.LogInformation($"Presence changed from {previousAvailability}/{previousActivity} to {availability}/{activity} after {(observedAt - previousPresenceObservedAt).TotalSeconds:F0}s");
+                                        }
+
+                                        previousAvailability = availability;
+                                        previousActivity = activity;
+                                        previousPresenceObservedAt = observedAt;
+                                    }
 
                                     if (newColor == string.Empty)
                                     {
