@@ -108,7 +108,7 @@ namespace PresenceLight.Core
             return result;
         }
 
-        private async Task<string> CallLocalSerialHostForActivityChanged(object sender, string newActivity, CancellationToken cancellationToken)
+        private async Task<(bool Written, string Result)> CallLocalSerialHostForActivityChanged(object sender, string newActivity, CancellationToken cancellationToken)
         {
             string message = string.Empty;
             string result = string.Empty;
@@ -158,7 +158,7 @@ namespace PresenceLight.Core
             return await PerformSerialMessage(message, result, cancellationToken);
         }
 
-        private async Task<string> CallLocalSerialHostForAvailabilityChanged(object sender, string newAvailability, CancellationToken cancellationToken)
+        private async Task<(bool Written, string Result)> CallLocalSerialHostForAvailabilityChanged(object sender, string newAvailability, CancellationToken cancellationToken)
         {
             string message = string.Empty;
             string result = string.Empty;
@@ -201,14 +201,17 @@ namespace PresenceLight.Core
             string result = string.Empty;
             if (availability != _currentAvailability)
             {
-                result = await CallLocalSerialHostForAvailabilityChanged(this, availability, cancellationToken);
-                if (!cancellationToken.IsCancellationRequested)
+                bool written;
+                (written, result) = await CallLocalSerialHostForAvailabilityChanged(this, availability, cancellationToken);
+                if (!cancellationToken.IsCancellationRequested && written)
                 {
                     _currentAvailability = availability;
                 }
                 else
                 {
-                    // operation was cancelled
+                    // Operation was cancelled, or the write did not reach the port.
+                    // Leaving _currentAvailability alone is what allows the next poll
+                    // to try again, and reopen the port on the way.
                 }
 
             }
@@ -224,14 +227,17 @@ namespace PresenceLight.Core
             string result = string.Empty;
             if (activity != _currentActivity)
             {
-                result = await CallLocalSerialHostForActivityChanged(this, activity, cancellationToken);
-                if (!cancellationToken.IsCancellationRequested)
+                bool written;
+                (written, result) = await CallLocalSerialHostForActivityChanged(this, activity, cancellationToken);
+                if (!cancellationToken.IsCancellationRequested && written)
                 {
                     _currentActivity = activity;
                 }
                 else
                 {
-                    // operation was cancelled
+                    // Operation was cancelled, or the write did not reach the port.
+                    // Leaving _currentActivity alone is what allows the next poll to
+                    // try again, and reopen the port on the way.
                 }
             }
             else
@@ -242,64 +248,89 @@ namespace PresenceLight.Core
         }
 
         static Stack<string> _lastLineEndingCalled = new Stack<string>(1);
-        private async Task<string> PerformSerialMessage(string serialMessage, string result, CancellationToken cancellationToken)
+        private async Task<(bool Written, string Result)> PerformSerialMessage(string serialMessage, string result, CancellationToken cancellationToken)
         {
             if (_lastLineEndingCalled.Contains($"{serialMessage}"))
             {
                 _logger.LogDebug("No Change to State... NOT calling Api");
-                return "Skipped";
+                return (true, "Skipped");
             }
 
             using (Serilog.Context.LogContext.PushProperty("message", serialMessage))
             {
-                if (!string.IsNullOrEmpty(serialMessage))
+                if (string.IsNullOrEmpty(serialMessage))
                 {
-                    try
-                    {
-                        if (_port == null || !_port.IsOpen)
-                        {
-                            _logger.LogWarning("Serial Port not setup in PerformSerialMessage. Attempting to initialize");
-                            SetupSerialPort(_appState.Config.LightSettings.LocalSerialHost.LocalSerialHostMainSetup.Port);
-                        }
-
-                        Task<string> writeTask = Task<string>.Run(() => 
-                        {
-                            string writeResult = "";
-                            try
-                            {
-                                lock (serialWriteLock)
-                                {
-                                    _port.Write(serialMessage + _lineEnding);
-                                    writeResult = _port.ReadLine();
-                                }
-                            }
-                            catch (Exception e)
-                            {
-                                _logger.LogError(e, "Error Performing Serial Write");
-                                writeResult = $"Error: {e.Message}";
-                            }
-
-                            return writeResult.Trim();
-                        });
-                        
-                        string message = $"Sending {serialMessage} to {_port.PortName}";
-                        result = await Task.WhenAny(writeTask).Result;
-
-                        _logger.LogInformation(message);
-                        _lastLineEndingCalled.TryPop(out string res);
-                        _lastLineEndingCalled.Push($"{serialMessage}");
-
-                        using (Serilog.Context.LogContext.PushProperty("result", result))
-                            _logger.LogDebug(message + " Results");
-                    }
-                    catch (Exception e)
-                    {
-                        _logger.LogError(e, "Error Performing Web Request");
-                        result = $"Error: {e.Message}";
-                    }
+                    // Nothing is configured for this status, so there is nothing to retry.
+                    return (true, result);
                 }
 
-                return result;
+                try
+                {
+                    if (_port == null || !_port.IsOpen)
+                    {
+                        _logger.LogWarning("Serial Port not setup in PerformSerialMessage. Attempting to initialize");
+                        SetupSerialPort(_appState.Config.LightSettings.LocalSerialHost.LocalSerialHostMainSetup.Port);
+                    }
+
+                    Task<(bool Written, string Result)> writeTask = Task.Run(() =>
+                    {
+                        string writeResult = "";
+                        bool written = false;
+                        try
+                        {
+                            lock (serialWriteLock)
+                            {
+                                _port.Write(serialMessage + _lineEnding);
+
+                                // The message has reached the port. A device that never
+                                // replies is not a failed write, so a read timeout must
+                                // not discard that.
+                                written = true;
+
+                                try
+                                {
+                                    writeResult = _port.ReadLine();
+                                }
+                                catch (TimeoutException)
+                                {
+                                    _logger.LogDebug("Serial device did not reply within the read timeout");
+                                }
+                            }
+                        }
+                        catch (Exception e)
+                        {
+                            _logger.LogError(e, "Error Performing Serial Write");
+                            writeResult = $"Error: {e.Message}";
+                        }
+
+                        return (written, writeResult.Trim());
+                    });
+
+                    string message = $"Sending {serialMessage} to {_port.PortName}";
+                    bool written;
+                    (written, result) = await Task.WhenAny(writeTask).Result;
+
+                    _logger.LogInformation(message);
+
+                    // Only remember the message once it has actually been written.
+                    // Recording a failed write is what stopped the state from being sent
+                    // again after the port came back.
+                    if (written)
+                    {
+                        _lastLineEndingCalled.TryPop(out string res);
+                        _lastLineEndingCalled.Push($"{serialMessage}");
+                    }
+
+                    using (Serilog.Context.LogContext.PushProperty("result", result))
+                        _logger.LogDebug(message + " Results");
+
+                    return (written, result);
+                }
+                catch (Exception e)
+                {
+                    _logger.LogError(e, "Error Performing Web Request");
+                    return (false, $"Error: {e.Message}");
+                }
             }
         }
 
