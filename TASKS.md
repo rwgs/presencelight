@@ -1,18 +1,11 @@
-# PresenceLight tasks
+﻿# PresenceLight tasks
 
-Status: T1 complete; the desktop application builds and starts. Sign-in configuration is the next blocker. Phase order lives in [ROADMAP.md](ROADMAP.md), requirements in [SPEC.md](SPEC.md), and the current approach in [PLAN.md](PLAN.md).
+Status: T1 and T2 complete; the desktop application builds, signs in and reads presence. Pairing the Hue Bridge (T4) is the next blocker. Phase order lives in [ROADMAP.md](ROADMAP.md), requirements in [SPEC.md](SPEC.md), and the current approach in [PLAN.md](PLAN.md).
 
 ## Current phase: single-account restoration
 
-- [ ] T2: Make delegated sign-in and one real presence read work.
-  - Progress 2026-09-08: an application registration now exists in the user's tenant, created from the Settings page, and its identifiers are configured. Tenant-wide consent returned Forbidden because the account may register applications but does not hold a role that can consent for the whole organisation; this is not blocking, because both requested permissions are user-consentable at first sign-in. Sign-in itself and presence retrieval remain unverified.
-  - Scope: existing public-client registration/configuration, intentional account selection, least permissions and actionable access errors.
-  - Acceptance: one actual business account signs in and returns /me/presence; optional profile data does not block it.
-  - Automated validation: build and focused regressions for any repaired authentication/profile behaviour.
-  - Manual validation: real consent/sign-in, presence retrieval and missing-photo case. Watch for the failures reported in upstream issue 978: `AADSTS900971` ("No reply address provided") when redirect URIs are incomplete, and a sign-in loop that returns to the login page after the authorisation-complete page. The Entra fields are editable in the application through [Settings.razor](src/PresenceLight.Razor/Components/Pages/Settings.razor), so a wrong identifier can be corrected without rebuilding.
-  - Dependencies: T1 (met). `AADSettings.ClientId` is empty in [appsettings.json](src/DesktopClient/PresenceLight/appsettings.json), so the running application reports "Enter Microsoft Entra / Azure AD configuration in Settings" and never attempts authentication. An application registration and its client identifier are required before anything else in this task can be tested; the shipped scope is `https://graph.microsoft.com/.default` rather than an explicit `Presence.Read`, which resolves to whatever the registration grants. [register-entra-app.ps1](Build/scripts/register-entra-app.ps1) automates the registration, consent and settings update so the only manual step is an interactive administrator sign-in, and the Settings page runs it through [EntraSetupService.cs](src/DesktopClient/PresenceLight/Services/EntraSetupService.cs) so no command line is needed. The script has been parse-checked and its settings merge tested offline, the desktop build succeeds and the panel renders with creation available, but neither the script nor the panel has yet been run against a real tenant, so every Microsoft Graph call in this path is unverified. Organisation policy remains unverified.
-
 - [ ] T3: Verify authentication across restart and reauthentication.
+  - Progress 2026-09-09: the cached restart works. The installed application was stopped and replaced with a new build at 00:14, and the restarted process authenticated from the protected MSAL cache with no prompt and no sign-in click, reaching the profile/presence batch 4 seconds after loading settings. Settings persistence across restarts also holds for the installed copy: the client and tenant identifiers written at 20:06 the previous evening were still loaded, because the application is launched with its own folder as the working directory. Still unverified: sign-out clearing the intended account, visible required reauthentication, and revoked or expired access never counting as available.
   - Scope: protected cache, silent renewal, sign-out, revoked/expired access and explicit reconnect state.
   - Acceptance: cached restart works, sign-out clears the intended account, required reauthentication is visible, and failures never count as available.
   - Automated validation: focused cache/error-state tests where meaningful; relevant builds.
@@ -20,6 +13,7 @@ Status: T1 complete; the desktop application builds and starts. Sign-in configur
   - Dependencies: T2. Note from T1: the standalone build saves `settings.json` to `Directory.GetCurrentDirectory()` ([StandaloneSettingsService.cs:18](src/DesktopClient/PresenceLight/Services/Settings/StandaloneSettingsService.cs#L18)), so saved configuration follows the working directory of whatever started the application rather than a per-user location. The MSAL token cache, by contrast, lives under `%LOCALAPPDATA%\PresenceLight\` ([TokenCacheHelper.cs:19](src/PresenceLight.Core/GraphServices/TokenCacheHelper.cs#L19)). Confirm which behaviour is intended before relying on restart persistence, and revisit it in T8 where a standard user may launch from a directory they cannot write to.
 
 - [ ] T4: Pair the bridge and control the selected light manually.
+  - Progress 2026-09-08: discovery works. `Find Hue Bridge` located the bridge and saved its address, but pairing failed: the bridge returned `LinkButtonNotPressedException`, so no API key was created and light enumeration then failed with "Hue Api Key not configured". Two defects in that path are now repaired. [HueService.cs](src/PresenceLight.Core/Lights/HueServices/HueService.cs) made a single registration attempt, which fails whenever it races the physical button press; it now retries every 2 seconds for the bridge's 30-second link window, so the button can be pressed before or after confirming the dialog. [HueSetup.razor](src/PresenceLight.Razor/Components/Pages/HueSetup.razor) logged "Hue Bridge Registration Successful" before checking whether a key had actually been returned, and showed nothing while registration was in progress; it now logs success only when a key exists and shows a waiting message. The desktop build passes. Neither change has been exercised against the bridge, so pairing remains unverified and the change is not in [CHANGELOG.md](CHANGELOG.md) yet. Verified 2026-09-09 00:17 on the repaired build: pairing succeeded with no error, a bridge key was stored, the lights enumerated and a light was selected and saved (`id:/lights/2`). The two attempts at 00:12 and 00:13 that failed the same way as the previous evening were still on the old build, which was replaced at 00:14. What remains for this task is the colour check on the selected light. When the colour test runs, remember that working hours are enabled, so presence-driven updates only happen between 08:00 and 18:30 on weekdays; outside that window turn working hours off first or the light will not follow presence even once pairing succeeds.
   - Scope: discovery/IP entry, button pairing, light/group selection and identifier handling.
   - Acceptance: intended colour-capable light/group changes colour directly without Home Assistant.
   - Automated validation: builds and focused identifier/mapping regressions if repaired.
@@ -34,6 +28,7 @@ Status: T1 complete; the desktop application builds and starts. Sign-in configur
   - Dependencies: T2 and T4; agree brightness and relevant mappings.
 
 - [ ] T6: Define and implement freshness/failure indication.
+  - Observed 2026-09-08: a paused application is indistinguishable from a broken one. The installed settings enable working hours of 08:00-18:30 Monday to Friday, and outside them the polling loop takes no action and writes no log line at all, so presence reads simply stop with nothing in the UI, the tray icon or the log to say why. This is what interrupted the T2 run: the working-hours checkbox is bound straight to the configuration, so ticking it took effect on the next iteration at 20:22:30, 40 seconds before the save at 20:23:12, and 20:22 is after 18:30. Nothing was hung. The same code path also drops the end-of-day action after a restart, because `previousWorkingHours` is a local variable that starts false in every process, so an application started outside working hours never applies `HoursPassedStatus` (currently `Off`) and the light keeps whatever colour it last had.
   - Scope: last-success tracking, fallback colour/timeout, startup/shutdown and working-hours behaviour.
   - Acceptance: failed/stale reads never silently turn green; UI explains unknown and reauthentication states.
   - Automated validation: controlled fresh, failed and expired-read cases against agreed thresholds.
@@ -41,6 +36,7 @@ Status: T1 complete; the desktop application builds and starts. Sign-in configur
   - Dependencies: agree fallback, freshness timeout and lifecycle policies from SPEC.md.
 
 - [ ] T7: Recover polling and light state after interruptions.
+  - Note from the T2/T3 runs, from code reading rather than an observed failure: the loop in [MainWindow.xaml.cs:504](src/DesktopClient/PresenceLight/MainWindow.xaml.cs#L504) breaks and clears `isInteractRunning` whenever `SignedIn` is false, and only `LoadApp` or a sign-in request starts it again. [Index.razor:81](src/PresenceLight.Razor/Components/Pages/Index.razor#L81) sets `SignedIn` back to true on its own when the cached account still authenticates, without restarting the loop, so a sign-out followed by a page initialisation can leave the application signed in with no polling and no sign-in button. The loop also has no timeout or cancellation around its Graph and light calls, and the constructor runs a second unbounded `while (true)` flag-polling loop with a `Thread.Sleep(100)` in it, which is what consumes CPU while idle.
   - Scope: bounded retry/backoff, throttling, cancellation, responsive UI, prevention of overlapping loops and reconciliation after failed writes.
   - Acceptance: reconnect and sleep/resume restore monitoring, including when presence is unchanged; no stuck or duplicate loops.
   - Automated validation: focused transient/throttled responses, failed-write retry and loop-lifecycle checks for repaired code.
@@ -55,6 +51,10 @@ Status: T1 complete; the desktop application builds and starts. Sign-in configur
   - Known environmental limitation: a locally built, unsigned executable was blocked by Microsoft Defender Attack Surface Reduction on a second, managed device, including when run from the user's home directory. Relocating the files does not help, because the relevant rule judges the file's signature, prevalence and age rather than its path. This does not affect the monitoring design: presence is read from Graph per account, so the application only needs to run on one machine the user controls. Treat installation on a managed device as out of scope unless the build is code signed or the device's administrator adds an exclusion; see [publisher-verification.md](docs/publisher-verification.md).
   - Dependencies: T1-T7 and agreed latency/freshness acceptance thresholds. Installer/update publication belongs to a later phase.
 
+## Parked
+
+- Remove the Blazorise dependency. It is used for two things only: the per-status colour swatch in [Statuses.razor:29](src/PresenceLight.Razor/Components/Shared/Statuses.razor#L29), shared by the Hue, LIFX, Wiz and Yeelight pages, and two `<Label>` elements in [CustomApiSetup.razor](src/PresenceLight.Razor/Components/Pages/CustomApiSetup.razor). Both have direct replacements: `ColorEdit` renders an `<input type="color">`, so a plain input keeps the existing `ChangeStatusColor` handler unchanged, and `<Label>` becomes `<label>`, which is already the idiom beside those inputs. Removing it also removes the free-tier licence notice the library prints at startup, two package references, one `@using`, three service registrations and six stylesheet links across the desktop and web hosts. Bootstrap styling does not come from Blazorise, so those stylesheets can go without visual loss. Parked at the user's request on 2026-09-09 because `Statuses.razor` is the page the T5 colour validation runs against; revisit once presence colours are confirmed working.
+
 ## Validation status
 
 | Area | Result |
@@ -63,13 +63,23 @@ Status: T1 complete; the desktop application builds and starts. Sign-in configur
 | Desktop restore and build | Passed 2026-09-08 on .NET SDK 10.0.401: 0 errors, 127 warnings, 23.9 s |
 | Desktop launch | Passed 2026-09-08: window renders, no startup error; requires `DOTNET_ROOT` for the per-user toolchain |
 | Automated application tests | Not run; no test project exists |
-| Actual Graph account access and token recovery | Not tested |
-| Hue pairing and physical transitions | Not tested |
+| Actual Graph account access | Passed 2026-09-08: interactive sign-in, one profile/presence batch and 157 consecutive presence reads, with the missing-photo case exercised |
+| Graph token recovery across restart and reauthentication | Not tested; T3 |
+| Presence polling stability | Passed 2026-09-08 for the observed window: 157 consecutive reads over ~14 minutes, then correctly idle outside working hours, which the application does not report; see T6 |
+| Hue pairing and physical transitions | Pairing passed 2026-09-09 after the link-window repair: bridge key stored, lights enumerated, selection saved. Colour change on the selected light not yet checked |
 | Recovery, latency and working-day trial | Not tested |
 | Per-user installer and automatic updates | Not tested; later phase |
 | Second account and combined rules | Not implemented/validated; later phase |
 
 ## Completed
+
+- [x] T2: Make delegated sign-in and one real presence read work. Completed 2026-09-08.
+  - Result: an application registration created from the Settings page in the user's own tenant signs in and returns presence, which confirms the diagnosis in [PLAN.md](PLAN.md) that the original failure was the retired upstream registration rather than a code fault.
+  - Evidence: in the recorded run, interactive sign-in completed at 20:08:24, the profile/presence batch returned at 20:08:44, and the polling loop then performed 157 presence reads between 20:08:56 and 20:22:30 without logging an error. `SetColor` and `MapUI` dereference `Presence.Availability` on every iteration, so a null or failed presence would have been logged; none was.
+  - Missing photo: covered by the same run, which logged "Profile photo does not exist" and continued to presence, so absent optional profile data does not stop monitoring.
+  - Consent: tenant-wide consent returned Forbidden because the account may register applications but holds no role that can consent for the organisation. This did not block sign-in, because both requested permissions are user-consentable and consent at first sign-in was sufficient. Neither `AADSTS900971` nor the sign-in loop reported in upstream issue 978 occurred.
+  - Cancelled sign-in: an earlier attempt in the same run was cancelled at the browser (`authentication_canceled` at 20:08:15) and the next attempt succeeded, so a cancelled sign-in does not require restarting the application.
+  - Note carried forward: the application the user runs is the self-contained copy in the user profile rather than the repository build, so a source change only reaches it after a publish and copy. [install-local-build.ps1](Build/scripts/install-local-build.ps1) now does that in one command and keeps the installed `settings.json`, which holds the configured client and tenant identifiers.
 
 - [x] T1: Establish a reproducible desktop build and failure report. Completed 2026-09-08.
   - Result: the application was not broken. It had never been built on this machine, which had no .NET SDK and no Visual Studio. After installing the SDK for the current user, restore, build and launch all succeeded unmodified; no source change was needed.
