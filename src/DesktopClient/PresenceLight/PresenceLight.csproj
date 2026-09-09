@@ -92,6 +92,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Shipped beside the executable so the Settings page can create the Entra registration. -->
+    <Content Include="..\..\..\Build\scripts\register-entra-app.ps1" Link="register-entra-app.ps1">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="appsettings.Development.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
