@@ -5,6 +5,7 @@ Status: T1 complete; the desktop application builds and starts. Sign-in configur
 ## Current phase: single-account restoration
 
 - [ ] T2: Make delegated sign-in and one real presence read work.
+  - Progress 2026-09-08: an application registration now exists in the user's tenant, created from the Settings page, and its identifiers are configured. Tenant-wide consent returned Forbidden because the account may register applications but does not hold a role that can consent for the whole organisation; this is not blocking, because both requested permissions are user-consentable at first sign-in. Sign-in itself and presence retrieval remain unverified.
   - Scope: existing public-client registration/configuration, intentional account selection, least permissions and actionable access errors.
   - Acceptance: one actual business account signs in and returns /me/presence; optional profile data does not block it.
   - Automated validation: build and focused regressions for any repaired authentication/profile behaviour.

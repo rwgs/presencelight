@@ -276,7 +276,9 @@ $settings['AADSettings'] = $aadSettings
 
 $settings | ConvertTo-Json -Depth 32 | Set-Content -Path $SettingsPath -Encoding utf8
 
-try { Disconnect-MgGraph | Out-Null } catch { }
+# Signing out can warn about clearing its own token cache. Every useful step has already completed
+# by this point, so surfacing that warning would only look like a failure.
+try { Disconnect-MgGraph -WarningAction SilentlyContinue -ErrorAction SilentlyContinue 3>$null | Out-Null } catch { }
 
 Write-Step 'Done'
 Write-Host "Application (client) ID : $($application.AppId)"
