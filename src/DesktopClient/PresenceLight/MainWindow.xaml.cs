@@ -38,6 +38,13 @@ namespace PresenceLight
         private ISettingsService _settingsService;
         private WindowState lastWindowState;
         private bool isInteractRunning;
+
+        /// <summary>
+        /// How long presence may go unconfirmed before the light shows unknown, used when
+        /// the setting is absent or has been cleared to a value that would react to a
+        /// single failed read.
+        /// </summary>
+        private static readonly TimeSpan DefaultPresenceUnknownAfter = TimeSpan.FromSeconds(120);
         private readonly ILogger<MainWindow> _logger;
         private readonly AppState _appState = new AppState();
 
@@ -142,6 +149,15 @@ namespace PresenceLight
                 }
 
                 _appState.SetConfig(await _settingsService.LoadSettings() ?? throw new NullReferenceException("Settings Load Service Returned null"));
+
+                // A settings file written before this option existed has no value for
+                // it, which deserialises to zero and would make a single failed read
+                // enough to show unknown. Normalise it here so the interface and the
+                // behaviour agree, and so the next save records it.
+                if (_appState.Config.LightSettings.PresenceUnknownAfterSeconds <= 0)
+                {
+                    _appState.Config.LightSettings.PresenceUnknownAfterSeconds = DefaultPresenceUnknownAfter.TotalSeconds;
+                }
 
                 bool useWorkingHours = await _mediator.Send(new Core.WorkingHoursServices.UseWorkingHoursCommand());
                 bool IsInWorkingHours = await _mediator.Send(new Core.WorkingHoursServices.IsInWorkingHoursCommand());
@@ -346,6 +362,24 @@ namespace PresenceLight
             }
         }
 
+        /// <summary>
+        /// Says in the tray that presence is no longer confirmed. The colour alone
+        /// cannot explain why it changed, and the tray tooltip is the only part of the
+        /// interface visible while the window is hidden.
+        /// </summary>
+        public void MapUnknownUI(TimeSpan unconfirmedFor)
+        {
+            try
+            {
+                notificationIcon.Text = $"PresenceLight Status - Unknown, no presence read for {Math.Round(unconfirmedFor.TotalMinutes)} min";
+                notificationIcon.Icon = new BitmapImage(new Uri(IconConstants.GetIcon(_appState.Config.IconType, "PresenceUnknown")));
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "Error Occurred Mapping Unknown UI");
+            }
+        }
+
         public void MapUI(Presence presence)
         {
             try
@@ -501,13 +535,31 @@ namespace PresenceLight
         }
 #endregion
 
+        /// <summary>
+        /// The configured window before presence counts as unknown, falling back to
+        /// <see cref="DefaultPresenceUnknownAfter"/> when the setting is missing or not
+        /// positive. Read on each iteration so an edit applies without a restart.
+        /// </summary>
+        private TimeSpan PresenceUnknownAfter()
+        {
+            double configured = _appState.Config.LightSettings.PresenceUnknownAfterSeconds;
+            return configured > 0 ? TimeSpan.FromSeconds(configured) : DefaultPresenceUnknownAfter;
+        }
+
         private async Task InteractWithLights()
         {
-            bool previousWorkingHours = false;
+            // Nullable so that "not evaluated yet in this process" is distinct from
+            // "was outside working hours". Starting the application outside working
+            // hours used to skip the end-of-day action entirely, because a fresh
+            // process began at false and so never saw a transition out of them.
+            bool? previousWorkingHours = null;
+            bool? previousMonitoringSuppressed = null;
             string previousLightMode = string.Empty;
             string? previousAvailability = null;
             string? previousActivity = null;
             DateTime previousPresenceObservedAt = DateTime.MinValue;
+
+            var freshness = new Core.PresenceServices.PresenceFreshnessTracker(PresenceUnknownAfter());
             while (true)
             {
                 isInteractRunning = true;
@@ -564,6 +616,24 @@ namespace PresenceLight
                             else
                             {
                                 var isInWorkingHours = await _mediator.Send(new Core.WorkingHoursServices.IsInWorkingHoursCommand());
+
+                                // Outside working hours the loop takes no action and used
+                                // to write nothing at all, so a paused application could
+                                // not be told apart from a broken one. Report each change
+                                // once rather than on every iteration.
+                                if (previousMonitoringSuppressed != !isInWorkingHours)
+                                {
+                                    previousMonitoringSuppressed = !isInWorkingHours;
+                                    if (isInWorkingHours)
+                                    {
+                                        _logger.LogInformation($"Working hours have started; following presence again until {_appState.Config.LightSettings.WorkingHoursEndTime}");
+                                    }
+                                    else
+                                    {
+                                        _logger.LogInformation($"Outside working hours of {_appState.Config.LightSettings.WorkingHoursStartTime} to {_appState.Config.LightSettings.WorkingHoursEndTime} on {_appState.Config.LightSettings.WorkingDays}; presence is not being followed");
+                                    }
+                                }
+
                                 if (isInWorkingHours)
                                 {
                                     previousWorkingHours = isInWorkingHours;
@@ -574,8 +644,11 @@ namespace PresenceLight
                                 }
                                 else
                                 {
-                                    // check to see if working hours have passed
-                                    if (previousWorkingHours)
+                                    // Apply the end-of-day action on a transition out of
+                                    // working hours, and also on the first evaluation of a
+                                    // process that started outside them, which otherwise
+                                    // leaves whatever colour the light already had.
+                                    if (previousWorkingHours != false)
                                     {
                                         previousWorkingHours = false;
                                         previousLightMode = _appState.LightMode;
@@ -614,7 +687,59 @@ namespace PresenceLight
                                 case "Graph":
                                     _logger.LogInformation("PresenceLight Running in Teams Mode");
 
-                                    _appState.SetPresence(await System.Threading.Tasks.Task.Run(() => GetPresence()));
+                                    freshness.UnknownAfter = PresenceUnknownAfter();
+
+                                    // A failed read used to throw straight out to the
+                                    // handler at the bottom of the loop, which logged one
+                                    // generic line and left the previous colour on the
+                                    // light. A light on a stale colour cannot be told
+                                    // apart from a correct one, so failures are handled
+                                    // here instead.
+                                    Presence? presence = null;
+                                    try
+                                    {
+                                        presence = await System.Threading.Tasks.Task.Run(() => GetPresence());
+                                    }
+                                    catch (Exception presenceException)
+                                    {
+                                        // GetPresence has already logged the cause.
+                                        _logger.LogDebug(presenceException, "Presence read failed");
+                                    }
+
+                                    if (presence is null || string.IsNullOrEmpty(presence.Availability))
+                                    {
+                                        DateTime failedAt = DateTime.Now;
+                                        var previousFreshness = freshness.Current;
+                                        var freshnessNow = freshness.RecordFailure(failedAt);
+                                        TimeSpan unconfirmedFor = freshness.UnconfirmedFor(failedAt);
+
+                                        _appState.SetPresenceUnconfirmed(unconfirmedFor);
+
+                                        if (freshnessNow == Core.PresenceServices.PresenceFreshness.Unknown)
+                                        {
+                                            if (previousFreshness != Core.PresenceServices.PresenceFreshness.Unknown)
+                                            {
+                                                _logger.LogWarning($"Presence has not been read for {unconfirmedFor.TotalSeconds:F0}s; showing presence unknown instead of the last status");
+                                            }
+
+                                            await SetColor("PresenceUnknown", "PresenceUnknown");
+                                            MapUnknownUI(unconfirmedFor);
+                                        }
+                                        else if (previousFreshness == Core.PresenceServices.PresenceFreshness.Fresh)
+                                        {
+                                            _logger.LogInformation($"Presence read failed; holding the last status for up to {freshness.UnknownAfter.TotalSeconds:F0}s before showing unknown");
+                                        }
+
+                                        break;
+                                    }
+
+                                    if (freshness.Current != Core.PresenceServices.PresenceFreshness.Fresh && freshness.LastSuccessAt.HasValue)
+                                    {
+                                        _logger.LogInformation($"Presence readable again after {freshness.UnconfirmedFor(DateTime.Now).TotalSeconds:F0}s");
+                                    }
+
+                                    freshness.RecordSuccess(DateTime.Now);
+                                    _appState.SetPresence(presence);
 
                                     // Only the resulting colour was recorded, and several statuses are configured
                                     // with the same colour, so the log could not say which presence produced it.

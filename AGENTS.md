@@ -1,4 +1,4 @@
-# Project instructions
+﻿# Project instructions
 
 ## Purpose
 
@@ -53,13 +53,16 @@ dotnet --info
 dotnet restore .\src\DesktopClient\PresenceLight\PresenceLight.csproj
 dotnet build .\src\DesktopClient\PresenceLight\PresenceLight.csproj -c Debug --no-restore -p:ChannelName=Standalone
 dotnet run --project .\src\DesktopClient\PresenceLight\PresenceLight.csproj -c Debug -p:ChannelName=Standalone
+dotnet test .\src\PresenceLight.Core.Tests\PresenceLight.Core.Tests.csproj
 .\Build\scripts\run-presencelight.cmd
 .\Build\scripts\install-local-build.ps1
 git diff --check
 git status --short
 ```
 
-No automated test project or dedicated formatting/lint gate was found during the initial inspection. Establish the focused regression-test command when introducing tests and record it here; do not report a solution-level test command as proof of coverage. Build diagnostics run through the project build. Do not run publishing workflows as validation.
+`dotnet test .\src\PresenceLight.Core.Tests\PresenceLight.Core.Tests.csproj` is the focused regression command. It is an xunit project covering `PresenceLight.Core` and holds 14 tests as of 2026-09-09, all passing. It covers only what has been deliberately made testable, currently the presence freshness decision, so it is not evidence of coverage for anything else; state what a change actually exercised. There is no dedicated formatting or lint gate. Build diagnostics run through the project build. Do not run publishing workflows as validation.
+
+Behaviour that depends on Windows, WPF or the tray lives in the desktop project and is not covered by these tests. When repairing such behaviour, extract the decision into `PresenceLight.Core` where it can be tested, as the freshness tracker is, and leave only the wiring in the desktop project.
 
 ## Validation
 

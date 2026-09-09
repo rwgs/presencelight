@@ -34,6 +34,15 @@
                                 Availability: @Helpers.HumanifyText(appState.Presence?.Availability)
                             </MudText>
                             <MudText Typo="Typo.h5">Activity: @Helpers.HumanifyText(appState.Presence?.Activity)</MudText>
+                            @*  The presence above is the last one that was read successfully and
+                                says nothing about whether it is still true, so a failing read has
+                                to be stated here. Otherwise a stale reading looks like a current one. *@
+                            @if (appState.PresenceUnconfirmedFor is TimeSpan unconfirmedFor)
+                            {
+                                <MudAlert Severity="Severity.Warning" Class="mt-4">
+                                    Not confirmed for @Math.Round(unconfirmedFor.TotalSeconds) seconds. Presence could not be read, so the status above may be out of date.
+                                </MudAlert>
+                            }
                         </MudItem>
                     </MudGrid>
                 </MudContainer>

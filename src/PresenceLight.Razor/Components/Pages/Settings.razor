@@ -261,6 +261,20 @@
                     </MudItem>
                 </MudGrid>
             </MudItem>
+            <MudItem xs="12">
+                <MudGrid Justify="Justify.FlexStart" Class="align-center">
+                    <MudItem xs="3">
+                        <MudText Typo="Typo.h5">Show Unknown After</MudText>
+                        <MudText Typo="Typo.caption">Seconds without a presence read before the light shows the Presence Unknown colour instead of the last status</MudText>
+                    </MudItem>
+                    <MudItem xs="6">
+                        <MudSlider @bind-Value="appState.Config.LightSettings.PresenceUnknownAfterSeconds" Step="10" Min="10" Max="600"></MudSlider>
+                    </MudItem>
+                    <MudItem xs="2">
+                        <MudNumericField @bind-Value="appState.Config.LightSettings.PresenceUnknownAfterSeconds" Variant="Variant.Outlined" Format="F0" Min="10" Max="600" Step="10" />
+                    </MudItem>
+                </MudGrid>
+            </MudItem>
             @if (appState.Config.AppType == "Desktop")
             {
                 <MudItem xs="12">

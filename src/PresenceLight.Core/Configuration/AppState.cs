@@ -107,6 +107,18 @@ namespace PresenceLight.Core
         public Presence Presence { get; set; }
 
         /// <summary>
+        /// Gets how long presence has gone unconfirmed, or null while reads are
+        /// succeeding.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="Presence"/> holds the last presence that was read successfully
+        /// and says nothing about whether it is still true. Anything displaying it has
+        /// to be able to say that it is no longer confirmed, otherwise a stale reading
+        /// is indistinguishable from a current one.
+        /// </remarks>
+        public TimeSpan? PresenceUnconfirmedFor { get; private set; }
+
+        /// <summary>
         /// Gets or sets the light mode.
         /// </summary>
         public string LightMode { get; set; }
@@ -141,6 +153,7 @@ namespace PresenceLight.Core
             User = user;
             Presence = presence;
             ProfileImage = photo;
+            PresenceUnconfirmedFor = null;
             NotifyStateChanged();
         }
 
@@ -151,6 +164,19 @@ namespace PresenceLight.Core
         public void SetPresence(Presence presence)
         {
             Presence = presence;
+            PresenceUnconfirmedFor = null;
+            NotifyStateChanged();
+        }
+
+        /// <summary>
+        /// Records that presence could not be read, and for how long it has now gone
+        /// unconfirmed. The last known <see cref="Presence"/> is kept, because it is
+        /// still worth showing as long as it is labelled as unconfirmed.
+        /// </summary>
+        /// <param name="unconfirmedFor">How long presence has gone unconfirmed.</param>
+        public void SetPresenceUnconfirmed(TimeSpan unconfirmedFor)
+        {
+            PresenceUnconfirmedFor = unconfirmedFor;
             NotifyStateChanged();
         }
 

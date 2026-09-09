@@ -66,6 +66,17 @@ namespace PresenceLight.Core
         public double PollingInterval { get; set; }
 
         /// <summary>
+        /// Gets or sets how many seconds presence may go unconfirmed before the light
+        /// shows the presence-unknown status instead of its last known colour.
+        /// </summary>
+        /// <remarks>
+        /// A light left on its last colour cannot be told apart from a correct one, so
+        /// a failed or stale read must eventually say so rather than keep showing that
+        /// someone is available. Zero or less makes a single failed read enough.
+        /// </remarks>
+        public double PresenceUnknownAfterSeconds { get; set; }
+
+        /// <summary>
         /// Gets or sets a value indicating whether to use the default brightness.
         /// </summary>
         public bool UseDefaultBrightness { get; set; }
