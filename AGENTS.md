@@ -46,12 +46,15 @@ $env:DOTNET_ROOT = "$env:LOCALAPPDATA\Microsoft\dotnet"
 
 `DOTNET_ROOT` is required to run the built executable. Without it the apphost searches the machine-wide runtime location and exits with `0x80008083` (`CoreHostLibMissingFailure`) before any application code runs; that exit code is a toolchain symptom, not an application fault. `run-presencelight.cmd` sets it and starts the application from the repository root, so the built executable can also be launched from Explorer.
 
+The application the user runs day to day is a self-contained copy installed in `%USERPROFILE%\PresenceLight`, which keeps its own `settings.json`. A source change only reaches it after a publish and copy, so use `install-local-build.ps1` for that; it publishes the same self-contained build as the artifact workflow, stops the running instance, preserves the installed `settings.json` and restarts the application.
+
 ```powershell
 dotnet --info
 dotnet restore .\src\DesktopClient\PresenceLight\PresenceLight.csproj
 dotnet build .\src\DesktopClient\PresenceLight\PresenceLight.csproj -c Debug --no-restore -p:ChannelName=Standalone
 dotnet run --project .\src\DesktopClient\PresenceLight\PresenceLight.csproj -c Debug -p:ChannelName=Standalone
 .\Build\scripts\run-presencelight.cmd
+.\Build\scripts\install-local-build.ps1
 git diff --check
 git status --short
 ```
