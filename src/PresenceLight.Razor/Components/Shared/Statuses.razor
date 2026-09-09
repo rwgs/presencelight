@@ -29,7 +29,7 @@
                             <ColorEdit Color="@status.Color" @onchange="@((ChangeEventArgs e) => ChangeStatusColor(e, status))" />
                         </MudItem>
                         <MudItem xs="4">
-                            <MudCheckBox T="bool" Checked="@status.Disabled" ValueChanged="@(x => StatusDisabledOnCheck(x, status))" Label="Off?"></MudCheckBox>
+                            <MudCheckBox T="bool" Value="@status.Disabled" ValueChanged="@(x => StatusDisabledOnCheck(x, status))" Label="Off?"></MudCheckBox>
                         </MudItem>
                     </MudGrid>
                 }
