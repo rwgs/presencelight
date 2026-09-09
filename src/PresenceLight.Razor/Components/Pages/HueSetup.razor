@@ -238,6 +238,14 @@
                     _logger.LogInformation("Hue Bridge Registration Successful");
                     await Save();
                 }
+                else
+                {
+                    // The link window can close without an exception being thrown, so say so
+                    // rather than leaving the waiting message on screen indefinitely.
+                    hueMessage = "The button on your Hue Bridge was not pressed in time, please try again";
+                    showHueMessage = true;
+                    hueMessageClass = "text-danger";
+                }
             }
             catch (Exception ex)
             {
