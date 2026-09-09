@@ -29,7 +29,11 @@
                             <ColorEdit Color="@status.Color" @onchange="@((ChangeEventArgs e) => ChangeStatusColor(e, status))" />
                         </MudItem>
                         <MudItem xs="4">
-                            <MudCheckBox T="bool" Checked="@status.Disabled" ValueChanged="@(x => StatusDisabledOnCheck(x, status))" Label="Off?"></MudCheckBox>
+                            @*  Value, not Checked. MudBlazor renamed the parameter and MudComponentBase
+                                captures unmatched attributes, so Checked bound nothing and was emitted as a
+                                plain HTML attribute: the box always rendered unticked whatever was stored,
+                                while ValueChanged still wrote it. A status set to Off was therefore invisible. *@
+                            <MudCheckBox T="bool" Value="@status.Disabled" ValueChanged="@(x => StatusDisabledOnCheck(x, status))" Label="Off?"></MudCheckBox>
                         </MudItem>
                     </MudGrid>
                 }

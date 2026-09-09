@@ -140,6 +140,34 @@ namespace PresenceLight.Core.Tests.PresenceServices
         }
 
         [Fact]
+        public void A_new_tracker_has_not_attempted_anything()
+        {
+            // Current starts at Unknown, so this is the only way to tell a new tracker
+            // from one that has given up on a real outage. Without it, the first
+            // successful read of a healthy start is reported as a recovery.
+            Assert.False(Tracker().HasAttempted);
+        }
+
+        [Fact]
+        public void A_success_counts_as_an_attempt()
+        {
+            var tracker = Tracker();
+            tracker.RecordSuccess(Start);
+
+            Assert.True(tracker.HasAttempted);
+        }
+
+        [Fact]
+        public void A_failure_counts_as_an_attempt_even_though_nothing_has_succeeded()
+        {
+            var tracker = Tracker();
+            tracker.RecordFailure(Start);
+
+            Assert.True(tracker.HasAttempted);
+            Assert.Null(tracker.LastSuccessAt);
+        }
+
+        [Fact]
         public void Unconfirmed_time_is_measured_from_the_last_success()
         {
             var tracker = Tracker();

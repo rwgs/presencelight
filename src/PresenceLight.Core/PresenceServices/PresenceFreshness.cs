@@ -68,6 +68,17 @@ namespace PresenceLight.Core.PresenceServices
         public PresenceFreshness Current { get; private set; } = PresenceFreshness.Unknown;
 
         /// <summary>
+        /// Whether any read has been recorded yet, successful or not.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="Current"/> starts at <see cref="PresenceFreshness.Unknown"/>, which
+        /// makes a brand new tracker indistinguishable from one that has given up on a
+        /// real outage. Anything reporting a recovery needs to tell those apart, so that
+        /// the first successful read of a healthy start is not announced as a recovery.
+        /// </remarks>
+        public bool HasAttempted => _startedAt.HasValue;
+
+        /// <summary>
         /// Records a presence read that returned a usable presence.
         /// </summary>
         public PresenceFreshness RecordSuccess(DateTime at)

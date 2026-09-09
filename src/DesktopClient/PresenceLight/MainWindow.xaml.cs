@@ -546,6 +546,22 @@ namespace PresenceLight
             return configured > 0 ? TimeSpan.FromSeconds(configured) : DefaultPresenceUnknownAfter;
         }
 
+        /// <summary>
+        /// Reports that presence can be read again, if it could not be a moment ago.
+        /// </summary>
+        /// <remarks>
+        /// Must be called before the success is recorded, because recording it is what
+        /// clears the state being reported. Both the profile batch and the polling read
+        /// can be the call that recovers, so both report through here.
+        /// </remarks>
+        private void ReportPresenceReadableAgain(Core.PresenceServices.PresenceFreshnessTracker freshness, DateTime readAt)
+        {
+            if (freshness.HasAttempted && freshness.Current != Core.PresenceServices.PresenceFreshness.Fresh)
+            {
+                _logger.LogInformation($"Presence readable again after {freshness.UnconfirmedFor(readAt).TotalSeconds:F0}s");
+            }
+        }
+
         private async Task InteractWithLights()
         {
             // Nullable so that "not evaluated yet in this process" is distinct from
@@ -578,6 +594,16 @@ namespace PresenceLight
 
                                 _appState.SetLightMode("Graph");
 
+                                // This batch returns a presence too, so it counts as a
+                                // successful read. Without it a later failure would be
+                                // measured from whenever the polling call last worked.
+                                if (presence is not null && !string.IsNullOrEmpty(presence.Availability))
+                                {
+                                    DateTime batchReadAt = DateTime.Now;
+                                    ReportPresenceReadableAgain(freshness, batchReadAt);
+                                    freshness.RecordSuccess(batchReadAt);
+                                }
+
                                 if (photo == null)
                                 {
                                     MapUI(presence);
@@ -597,6 +623,21 @@ namespace PresenceLight
                                     _logger.LogWarning("Error getting profile and presence info. Something is likely corrupt. Requesting sign out.");
                                     _appState.SignOutRequested = true;
                                 }
+                            }
+                            catch (Exception ex)
+                            {
+                                // An unreachable Graph fails here rather than with a
+                                // ServiceException, and the exception used to escape the
+                                // whole iteration: it skipped the polling delay and every
+                                // light decision below, including the freshness check, so
+                                // the light stayed on its last colour indefinitely. An
+                                // application that started while Graph was unreachable
+                                // never populates the profile, so it never left this
+                                // branch and could hold a stale green for as long as the
+                                // outage lasted. The cause is already logged by
+                                // GraphWrapper; what matters is that the iteration
+                                // continues to the freshness check.
+                                _logger.LogDebug(ex, "Profile and presence batch failed");
                             }
                         }
                         await Task.Delay(Convert.ToInt32(_appState.Config.LightSettings.PollingInterval * 1000));
@@ -725,20 +766,22 @@ namespace PresenceLight
                                             await SetColor("PresenceUnknown", "PresenceUnknown");
                                             MapUnknownUI(unconfirmedFor);
                                         }
-                                        else if (previousFreshness == Core.PresenceServices.PresenceFreshness.Fresh)
+                                        else if (previousFreshness != Core.PresenceServices.PresenceFreshness.Holding)
                                         {
+                                            // Compared against Holding rather than Fresh so that an
+                                            // application which starts unable to reach Graph says so
+                                            // straight away. The tracker begins at Unknown, so testing
+                                            // for Fresh left a cold start silent until the window
+                                            // expired, which is the case most likely to be a real fault.
                                             _logger.LogInformation($"Presence read failed; holding the last status for up to {freshness.UnknownAfter.TotalSeconds:F0}s before showing unknown");
                                         }
 
                                         break;
                                     }
 
-                                    if (freshness.Current != Core.PresenceServices.PresenceFreshness.Fresh && freshness.LastSuccessAt.HasValue)
-                                    {
-                                        _logger.LogInformation($"Presence readable again after {freshness.UnconfirmedFor(DateTime.Now).TotalSeconds:F0}s");
-                                    }
-
-                                    freshness.RecordSuccess(DateTime.Now);
+                                    DateTime presenceReadAt = DateTime.Now;
+                                    ReportPresenceReadableAgain(freshness, presenceReadAt);
+                                    freshness.RecordSuccess(presenceReadAt);
                                     _appState.SetPresence(presence);
 
                                     // Only the resulting colour was recorded, and several statuses are configured
