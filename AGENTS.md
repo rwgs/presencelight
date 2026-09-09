@@ -60,7 +60,7 @@ git diff --check
 git status --short
 ```
 
-`dotnet test .\src\PresenceLight.Core.Tests\PresenceLight.Core.Tests.csproj` is the focused regression command. It is an xunit project covering `PresenceLight.Core` and holds 14 tests as of 2026-09-09, all passing. It covers only what has been deliberately made testable, currently the presence freshness decision, so it is not evidence of coverage for anything else; state what a change actually exercised. There is no dedicated formatting or lint gate. Build diagnostics run through the project build. Do not run publishing workflows as validation.
+`dotnet test .\src\PresenceLight.Core.Tests\PresenceLight.Core.Tests.csproj` is the focused regression command. It is an xunit project covering `PresenceLight.Core` and holds 17 tests as of 2026-09-09, all passing. It covers only what has been deliberately made testable, currently the presence freshness decision, so it is not evidence of coverage for anything else; state what a change actually exercised. There is no dedicated formatting or lint gate. Build diagnostics run through the project build. Do not run publishing workflows as validation.
 
 Behaviour that depends on Windows, WPF or the tray lives in the desktop project and is not covered by these tests. When repairing such behaviour, extract the decision into `PresenceLight.Core` where it can be tested, as the freshness tracker is, and leave only the wiring in the desktop project.
 
