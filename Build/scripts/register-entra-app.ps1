@@ -208,17 +208,42 @@ if ($SkipAdminConsent) {
 else {
     Write-Step 'Granting tenant-wide admin consent'
     $scopeString = (($DelegatedPermissions | Sort-Object -Unique) -join ' ')
-    $existingGrant = Get-MgOauth2PermissionGrant -Filter "clientId eq '$($servicePrincipal.Id)' and consentType eq 'AllPrincipals'" -All |
-        Where-Object { $_.ResourceId -eq $graphServicePrincipal.Id } |
-        Select-Object -First 1
 
-    if ($existingGrant) {
-        Update-MgOauth2PermissionGrant -OAuth2PermissionGrantId $existingGrant.Id -Scope $scopeString
-        Write-Host "Updated the existing consent grant to: $scopeString"
+    # The oauth2PermissionGrant cmdlets live in Microsoft.Graph.Identity.SignIns, which this script
+    # does not install. These requests go directly over the connection already established rather
+    # than downloading another module for three calls.
+    try {
+        $filter = "clientId eq '$($servicePrincipal.Id)' and consentType eq 'AllPrincipals' and resourceId eq '$($graphServicePrincipal.Id)'"
+        $query = 'https://graph.microsoft.com/v1.0/oauth2PermissionGrants?$filter=' + [uri]::EscapeDataString($filter)
+        $response = Invoke-MgGraphRequest -Method GET -Uri $query
+
+        $existingGrant = $null
+        if ($response -is [System.Collections.IDictionary] -and $response.Contains('value')) {
+            $existingGrant = @($response['value']) | Select-Object -First 1
+        }
+
+        if ($existingGrant) {
+            $grantId = $existingGrant['id']
+            Invoke-MgGraphRequest -Method PATCH -Uri "https://graph.microsoft.com/v1.0/oauth2PermissionGrants/$grantId" -Body @{ scope = $scopeString } | Out-Null
+            Write-Host "Updated the existing consent grant to: $scopeString"
+        }
+        else {
+            $body = @{
+                clientId    = $servicePrincipal.Id
+                consentType = 'AllPrincipals'
+                resourceId  = $graphServicePrincipal.Id
+                scope       = $scopeString
+            }
+
+            Invoke-MgGraphRequest -Method POST -Uri 'https://graph.microsoft.com/v1.0/oauth2PermissionGrants' -Body $body | Out-Null
+            Write-Host "Granted: $scopeString"
+        }
     }
-    else {
-        New-MgOauth2PermissionGrant -ClientId $servicePrincipal.Id -ConsentType AllPrincipals -ResourceId $graphServicePrincipal.Id -Scope $scopeString | Out-Null
-        Write-Host "Granted: $scopeString"
+    catch {
+        # The registration already exists and works without tenant-wide consent, so report this and
+        # carry on rather than discarding a usable result.
+        Write-Host "Tenant-wide consent was not granted: $($_.Exception.Message)"
+        Write-Host 'This is not fatal. Each user is asked to consent at their own first sign-in instead.'
     }
 }
 
