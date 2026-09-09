@@ -30,6 +30,12 @@ namespace PresenceLight.Core
         private LocalHueApi _client;
         private readonly ILogger<HueService> _logger;
 
+        /// <summary>
+        /// The selection last reported as missing from the bridge, so that a light which
+        /// stays missing is reported once rather than on every write.
+        /// </summary>
+        private string _missingLightId;
+
         public HueService(AppState appState, ILogger<HueService> logger)
         {
             _logger = logger;
@@ -65,16 +71,16 @@ namespace PresenceLight.Core
             {
                 _client = new LocalHueApi(_appState.Config.LightSettings.Hue.HueIpAddress, _appState.Config.LightSettings.Hue.HueApiKey);
 
-                var o = await Handle(_appState.Config.LightSettings.Hue.UseActivityStatus ? activity : availability, lightId);
+                var o = Handle(_appState.Config.LightSettings.Hue.UseActivityStatus ? activity : availability, lightId);
 
-                if (o.returnFunc)
+                if (o.turnOff)
                 {
+                    await TurnOff(lightId);
                     return;
                 }
 
                 var color = o.color.Replace("#", "");
                 var command = o.command;
-                var message = "";
                 switch (color.Length)
                 {
                     case var length when color.Length == 6:
@@ -96,21 +102,7 @@ namespace PresenceLight.Core
 
                 if (availability == "Off")
                 {
-                    command.TurnOff();
-
-                    if (lightId.Contains("group_id:"))
-                    {
-                        var groupCommand = new UpdateGroupedLight();
-                        groupCommand.TurnOff();
-                        await _client.UpdateGroupedLightAsync(Guid.Parse(lightId.Replace("group_id:", "")), groupCommand);
-                    }
-                    else
-                    {
-                        await _client.UpdateLightAsync(Guid.Parse(lightId.Replace("id:", "")), command);
-                    }
-
-                    message = $"Turning Hue Light {lightId} Off";
-                    _logger.LogInformation(message);
+                    await TurnOff(lightId);
                     return;
                 }
 
@@ -141,26 +133,27 @@ namespace PresenceLight.Core
                     }
                 }
 
-                if (lightId.Contains("group_id:"))
+                Guid? bridgeId = await ResolveBridgeId(lightId);
+                if (bridgeId is null)
                 {
-                    var newLightId = ((GroupedLight)_appState.HueLights.First(a => ((GroupedLight)a).IdV1 == lightId.Replace("group_id:", ""))).Id;
+                    return;
+                }
 
-
+                if (IsGroup(lightId))
+                {
                     var groupCommand = new UpdateGroupedLight();
                     groupCommand.Color = command.Color;
                     groupCommand.On = command.On;
                     groupCommand.Dimming = command.Dimming;
                     groupCommand.Dynamics = command.Dynamics;
-                    await _client.GroupedLight.UpdateAsync(newLightId, groupCommand);
+                    await _client.GroupedLight.UpdateAsync(bridgeId.Value, groupCommand);
                 }
                 else
                 {
-                    var newLightId = ((Light)_appState.HueLights.First(a => ((Light)a).IdV1 == lightId.Replace("id:", ""))).Id;
-                    await _client.Light.UpdateAsync(newLightId, command);
+                    await _client.Light.UpdateAsync(bridgeId.Value, command);
                 }
 
-                message = $"Setting Hue Light {lightId} to {color}";
-                _logger.LogInformation(message);
+                _logger.LogInformation($"Setting Hue Light {lightId} to {color}");
             }
             catch (Exception e)
             {
@@ -168,6 +161,109 @@ namespace PresenceLight.Core
                 throw;
             }
         }
+
+        /// <summary>
+        /// Turns the selected light or group off.
+        /// </summary>
+        private async Task TurnOff(string lightId)
+        {
+            Guid? bridgeId = await ResolveBridgeId(lightId);
+            if (bridgeId is null)
+            {
+                return;
+            }
+
+            if (IsGroup(lightId))
+            {
+                var groupCommand = new UpdateGroupedLight();
+                groupCommand.TurnOff();
+                await _client.GroupedLight.UpdateAsync(bridgeId.Value, groupCommand);
+            }
+            else
+            {
+                var command = new UpdateLight();
+                command.TurnOff();
+                await _client.Light.UpdateAsync(bridgeId.Value, command);
+            }
+
+            _logger.LogInformation($"Turning Hue Light {lightId} Off");
+        }
+
+        /// <summary>
+        /// The bridge's own identifier for the selected light or group, or null if the
+        /// bridge does not have it.
+        /// </summary>
+        /// <remarks>
+        /// A selection is a v1 identifier such as <c>id:/lights/4</c>, and the v2 API is
+        /// addressed by a Guid, so it has to be looked up in the list the bridge
+        /// returned. Turning a light off parsed the selection as a Guid instead, which
+        /// cannot succeed: exiting the application, reaching the end of the working day
+        /// with the after-hours action set to Off, and configuring a status as disabled
+        /// all threw a format error and left the light on its last colour. Observed on
+        /// the installed build with a selection of <c>id:/lights/4</c>.
+        ///
+        /// The cached list is refreshed on a miss, because it is only fetched when empty
+        /// and can hold the wrong kind: the settings page fills it with groups when
+        /// grouped control is chosen and with individual lights otherwise, so a selection
+        /// made in one mode was looked up in the other mode's list. That threw an invalid
+        /// cast out of every write for the life of the process, with nothing to refetch
+        /// it, which is the light-side half of recovery that upstream issue 973 describes
+        /// for serial devices.
+        /// </remarks>
+        private async Task<Guid?> ResolveBridgeId(string lightId)
+        {
+            Guid? resolved = MatchBridgeId(_appState.HueLights, lightId);
+
+            if (resolved is null)
+            {
+                _appState.SetHueLights(IsGroup(lightId)
+                    ? (IEnumerable<object>) await GetGroups()
+                    : await GetLights());
+
+                resolved = MatchBridgeId(_appState.HueLights, lightId);
+            }
+
+            if (resolved is null)
+            {
+                // Reported once per selection rather than on every write, because the
+                // loop writes the colour every few seconds for as long as it is running.
+                if (_missingLightId != lightId)
+                {
+                    _missingLightId = lightId;
+                    _logger.LogWarning($"Selected Hue light {lightId} is not on the bridge; nothing was set");
+                }
+            }
+            else
+            {
+                _missingLightId = null;
+            }
+
+            return resolved;
+        }
+
+        /// <summary>
+        /// Finds the selection in a list the bridge returned, without asking it again.
+        /// </summary>
+        /// <param name="lights">The cached list, which may hold either kind or neither.</param>
+        /// <param name="lightId">The configured selection, such as <c>id:/lights/4</c>.</param>
+        private static Guid? MatchBridgeId(IEnumerable<object> lights, string lightId)
+        {
+            if (lights is null || string.IsNullOrEmpty(lightId))
+            {
+                return null;
+            }
+
+            // OfType rather than a cast, so a list holding the other kind misses and is
+            // refreshed rather than throwing.
+            return IsGroup(lightId)
+                ? lights.OfType<GroupedLight>().FirstOrDefault(g => g.IdV1 == lightId.Replace("group_id:", ""))?.Id
+                : lights.OfType<Light>().FirstOrDefault(l => l.IdV1 == lightId.Replace("id:", ""))?.Id;
+        }
+
+        /// <summary>
+        /// Whether the selection names a group rather than a single light.
+        /// </summary>
+        private static bool IsGroup(string lightId) => lightId.Contains("group_id:");
 
         //Need to wire up a way to do this without user intervention
         public async Task<string> RegisterBridge()
@@ -244,7 +340,14 @@ namespace PresenceLight.Core
             }
         }
 
-        private async Task<(string color, UpdateLight command, bool returnFunc)> Handle(string presence, string lightId)
+        /// <summary>
+        /// Works out what the configured status says the light should do.
+        /// </summary>
+        /// <returns>
+        /// The colour to show, the command to send, and whether the status is configured
+        /// as disabled, which means turn the light off and show no colour at all.
+        /// </returns>
+        private (string color, UpdateLight command, bool turnOff) Handle(string presence, string lightId)
         {
             var props = _appState.Config.LightSettings.Hue.Statuses.GetType().GetProperties().ToList();
 
@@ -258,7 +361,6 @@ namespace PresenceLight.Core
             }
 
             string color = "";
-            string message;
             var command = new UpdateLight();
 
             if (presence.Contains('#'))
@@ -283,20 +385,9 @@ namespace PresenceLight.Core
                     }
                     else
                     {
+                        // Reported rather than written here, so that every write to the
+                        // bridge goes through the one place that knows how to address it.
                         command.TurnOff();
-
-                        if (lightId.Contains("group_id:"))
-                        {
-                            var groupCommand = new UpdateGroupedLight();
-                            groupCommand.TurnOff();
-                            await _client.UpdateGroupedLightAsync(Guid.Parse(lightId.Replace("group_id:", "")), groupCommand);
-                        }
-                        else
-                        {
-                            await _client.UpdateLightAsync(Guid.Parse(lightId.Replace("id:", "")), command);
-                        }
-                        message = $"Turning Hue Light {lightId} Off";
-                        _logger.LogInformation(message);
                         return (color, command, true);
                     }
                 }
