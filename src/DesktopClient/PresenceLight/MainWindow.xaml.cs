@@ -503,7 +503,13 @@ namespace PresenceLight
 
         private async Task InteractWithLights()
         {
-            bool previousWorkingHours = false;
+            // Holds what the working hours schedule last did, so that the end of day
+            // action is applied on the way out of working hours rather than on every
+            // pass. A plain bool starting at false in every process is what made an
+            // application started or restarted outside working hours never apply
+            // HoursPassedStatus, and made switching the schedule off and on again leave
+            // the light wherever presence had last put it.
+            var workingHours = new Core.WorkingHoursServices.WorkingHoursMonitor();
             string previousLightMode = string.Empty;
             while (true)
             {
@@ -551,50 +557,39 @@ namespace PresenceLight
 
                         if (_appState.Config.LightSettings.SyncLights)
                         {
-                            if (!await _mediator.Send(new Core.WorkingHoursServices.UseWorkingHoursCommand()))
+                            var schedule = workingHours.Next(
+                                await _mediator.Send(new Core.WorkingHoursServices.UseWorkingHoursCommand()),
+                                await _mediator.Send(new Core.WorkingHoursServices.IsInWorkingHoursCommand()));
+
+                            switch (schedule.Action)
                             {
-                                if (_appState.LightMode == "Graph")
-                                {
-                                    touchLight = true;
-                                }
-                            }
-                            else
-                            {
-                                var isInWorkingHours = await _mediator.Send(new Core.WorkingHoursServices.IsInWorkingHoursCommand());
-                                if (isInWorkingHours)
-                                {
-                                    previousWorkingHours = isInWorkingHours;
+                                case Core.WorkingHoursServices.WorkingHoursAction.FollowPresence:
                                     if (_appState.LightMode == "Graph")
                                     {
                                         touchLight = true;
                                     }
-                                }
-                                else
-                                {
-                                    // check to see if working hours have passed
-                                    if (previousWorkingHours)
+                                    break;
+
+                                case Core.WorkingHoursServices.WorkingHoursAction.EndOfDay:
+                                    previousLightMode = _appState.LightMode;
+                                    switch (_appState.Config.LightSettings.HoursPassedStatus)
                                     {
-                                        previousWorkingHours = false;
-                                        previousLightMode = _appState.LightMode;
-                                        switch (_appState.Config.LightSettings.HoursPassedStatus)
-                                        {
 
-                                            case "White":
-                                                newColor = "Offline";
-                                                _appState.SetLightMode("Manual");
-                                                break;
-                                            case "Off":
-                                                newColor = "Off";
-                                                _appState.SetLightMode("Manual");
-                                                break;
-                                            case "Keep":
-                                            default:
-                                                break;
-                                        }
-
-                                        touchLight = true;
+                                        case "White":
+                                            newColor = "Offline";
+                                            _appState.SetLightMode("Manual");
+                                            break;
+                                        case "Off":
+                                            newColor = "Off";
+                                            _appState.SetLightMode("Manual");
+                                            break;
+                                        case "Keep":
+                                        default:
+                                            break;
                                     }
-                                }
+
+                                    touchLight = true;
+                                    break;
                             }
                         }
 

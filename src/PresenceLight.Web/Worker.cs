@@ -93,7 +93,13 @@ namespace PresenceLight.Web
 
         private async Task InteractWithLights()
         {
-            bool previousWorkingHours = false;
+            // Holds what the working hours schedule last did, so that the end of day
+            // action is applied on the way out of working hours rather than on every
+            // pass. A plain bool starting at false in every process is what made a
+            // worker started outside working hours never apply HoursPassedStatus, and
+            // it was never cleared afterwards either, so once the end of day action had
+            // run it ran again on every pass for the rest of the evening.
+            var workingHours = new Core.WorkingHoursServices.WorkingHoursMonitor();
             while (await loginService.IsUserAuthenticated())
             {
 
@@ -109,44 +115,33 @@ namespace PresenceLight.Web
 
                     if (_appState.Config.LightSettings.SyncLights)
                     {
-                        if (!useWorkingHours)
+                        var schedule = workingHours.Next(useWorkingHours, IsInWorkingHours);
+
+                        switch (schedule.Action)
                         {
-                            if (_appState.LightMode == "Graph")
-                            {
-                                touchLight = true;
-                            }
-                        }
-                        else
-                        {
-                            if (IsInWorkingHours)
-                            {
-                                previousWorkingHours = IsInWorkingHours;
+                            case Core.WorkingHoursServices.WorkingHoursAction.FollowPresence:
                                 if (_appState.LightMode == "Graph")
                                 {
                                     touchLight = true;
                                 }
-                            }
-                            else
-                            {
-                                // check to see if working hours have passed
-                                if (previousWorkingHours)
+                                break;
+
+                            case Core.WorkingHoursServices.WorkingHoursAction.EndOfDay:
+                                switch (_appState.Config.LightSettings.HoursPassedStatus)
                                 {
-                                    switch (_appState.Config.LightSettings.HoursPassedStatus)
-                                    {
-                                        case "Keep":
-                                            break;
-                                        case "White":
-                                            newColor = "Offline";
-                                            break;
-                                        case "Off":
-                                            newColor = "Off";
-                                            break;
-                                        default:
-                                            break;
-                                    }
-                                    touchLight = true;
+                                    case "Keep":
+                                        break;
+                                    case "White":
+                                        newColor = "Offline";
+                                        break;
+                                    case "Off":
+                                        newColor = "Off";
+                                        break;
+                                    default:
+                                        break;
                                 }
-                            }
+                                touchLight = true;
+                                break;
                         }
                     }
 
