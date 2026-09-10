@@ -501,6 +501,27 @@ namespace PresenceLight
         }
 #endregion
 
+        /// <summary>
+        /// Says once what the working hours schedule is doing to the light, so that a
+        /// light which is deliberately not following presence can be told apart from one
+        /// that has stopped following it.
+        /// </summary>
+        private void ReportWorkingHours(Core.WorkingHoursServices.WorkingHoursState state)
+        {
+            switch (state)
+            {
+                case Core.WorkingHoursServices.WorkingHoursState.NotInUse:
+                    _logger.LogInformation("Working hours are switched off; presence is followed at any time");
+                    break;
+                case Core.WorkingHoursServices.WorkingHoursState.Following:
+                    _logger.LogInformation($"Working hours have started; following presence again until {_appState.Config.LightSettings.WorkingHoursEndTime}");
+                    break;
+                case Core.WorkingHoursServices.WorkingHoursState.Suppressed:
+                    _logger.LogInformation($"Outside working hours of {_appState.Config.LightSettings.WorkingHoursStartTime} to {_appState.Config.LightSettings.WorkingHoursEndTime} on {_appState.Config.LightSettings.WorkingDays}; presence is not being followed");
+                    break;
+            }
+        }
+
         private async Task InteractWithLights()
         {
             // Holds what the working hours schedule last did, so that the end of day
@@ -560,6 +581,15 @@ namespace PresenceLight
                             var schedule = workingHours.Next(
                                 await _mediator.Send(new Core.WorkingHoursServices.UseWorkingHoursCommand()),
                                 await _mediator.Send(new Core.WorkingHoursServices.IsInWorkingHoursCommand()));
+
+                            // Outside working hours the loop takes no action and wrote
+                            // nothing at all, so a paused application could not be told
+                            // apart from a broken one. Report each change once rather
+                            // than on every iteration.
+                            if (schedule.StateChanged)
+                            {
+                                ReportWorkingHours(schedule.State);
+                            }
 
                             switch (schedule.Action)
                             {
