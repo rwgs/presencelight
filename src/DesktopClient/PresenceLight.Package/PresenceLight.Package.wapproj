@@ -30,7 +30,10 @@
     <DebuggerType>ManagedOnly</DebuggerType>
     <AppxPackageSigningEnabled>false</AppxPackageSigningEnabled>
     <AppxAutoIncrementPackageRevision>False</AppxAutoIncrementPackageRevision>
-    <AppxBundleAutoResourcePackageQualifiers>Language|DXFeatureLevel</AppxBundleAutoResourcePackageQualifiers>
+    <!-- Language is excluded on purpose. The localized .NET framework satellite assemblies would
+         otherwise be split into per-language resource packages, and merging their resources.pri
+         fails when the bundle is installed (issue #987). -->
+    <AppxBundleAutoResourcePackageQualifiers>DXFeatureLevel</AppxBundleAutoResourcePackageQualifiers>
     <AppxBundle>Always</AppxBundle>
     <AppxBundlePlatforms>x64|x86|ARM64</AppxBundlePlatforms>
     <AppxPackageIncludePrivateSymbols>true</AppxPackageIncludePrivateSymbols>
