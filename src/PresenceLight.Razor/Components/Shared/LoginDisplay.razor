@@ -1,4 +1,5 @@
-﻿@inject AppState appState
+﻿@implements IDisposable
+@inject AppState appState
 @inject NavigationManager NavManager
 
 @if (appState.Config.AppType == "Desktop")
