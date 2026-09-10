@@ -571,24 +571,30 @@ namespace PresenceLight
                                     break;
 
                                 case Core.WorkingHoursServices.WorkingHoursAction.EndOfDay:
-                                    previousLightMode = _appState.LightMode;
                                     switch (_appState.Config.LightSettings.HoursPassedStatus)
                                     {
-
                                         case "White":
                                             newColor = "Offline";
-                                            _appState.SetLightMode("Manual");
                                             break;
                                         case "Off":
                                             newColor = "Off";
-                                            _appState.SetLightMode("Manual");
                                             break;
                                         case "Keep":
                                         default:
                                             break;
                                     }
 
-                                    touchLight = true;
+                                    // "Keep" means the light stays as it is, so it must
+                                    // not reach the light at all. Touching the light for
+                                    // it left the mode at Graph, so the end of the working
+                                    // day followed presence one more time, which is the
+                                    // one thing it exists to stop.
+                                    if (newColor.Length > 0)
+                                    {
+                                        previousLightMode = _appState.LightMode;
+                                        _appState.SetLightMode("Manual");
+                                        touchLight = true;
+                                    }
                                     break;
                             }
                         }

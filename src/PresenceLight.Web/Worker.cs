@@ -140,7 +140,10 @@ namespace PresenceLight.Web
                                     default:
                                         break;
                                 }
-                                touchLight = true;
+
+                                // "Keep" means the light stays as it is, so it must not
+                                // reach the light at all.
+                                touchLight = newColor.Length > 0;
                                 break;
                         }
                     }
