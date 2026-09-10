@@ -214,7 +214,7 @@
 
 
         var options = new DialogOptions { CloseOnEscapeKey = true };
-        var dialog = DialogService.Show<Confirm>("Please press the sync button on your Philips Hue Bridge", options);
+        var dialog = DialogService.Show<Confirm>("Press the round button on top of your Philips Hue Bridge, then choose Ok. PresenceLight keeps trying for 30 seconds, so either order works.", options);
 
         var result = await dialog.Result;
 
@@ -226,9 +226,26 @@
         {
             try
             {
+                hueMessage = "Waiting for the button on your Hue Bridge to be pressed...";
+                showHueMessage = true;
+                hueMessageClass = "";
+                StateHasChanged();
+
                 appState.Config.LightSettings.Hue.HueApiKey = await _mediator.Send(new Core.HueServices.RegisterBridgeCommand());
-                _logger.LogInformation("Hue Bridge Registration Successful");
-                await Save();
+
+                if (!string.IsNullOrEmpty(appState.Config.LightSettings.Hue.HueApiKey))
+                {
+                    _logger.LogInformation("Hue Bridge Registration Successful");
+                    await Save();
+                }
+                else
+                {
+                    // The link window can close without an exception being thrown, so say so
+                    // rather than leaving the waiting message on screen indefinitely.
+                    hueMessage = "The button on your Hue Bridge was not pressed in time, please try again";
+                    showHueMessage = true;
+                    hueMessageClass = "text-danger";
+                }
             }
             catch (Exception ex)
             {
