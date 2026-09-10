@@ -185,6 +185,8 @@ namespace PresenceLight
                 services.AddSingleton<ISettingsService, StandaloneSettingsService>();
             }
 
+            services.AddSingleton<IEntraSetupService, EntraSetupService>();
+
             services.AddSingleton<ITelemetryInitializer, AppVersionTelemetryInitializer>();
 
             //Inject Services Into MainWindow

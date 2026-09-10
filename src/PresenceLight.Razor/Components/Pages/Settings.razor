@@ -2,6 +2,7 @@
 
 @inject IJSRuntime js
 @inject ILogger<Settings> _logger;
+@inject IEntraSetupService EntraSetup
 
 <MudPaper Width="100%" Elevation="0">
     <MudContainer MaxWidth="MaxWidth.ExtraExtraLarge" Style="text-align:center">
@@ -39,6 +40,114 @@
                                     Variant="Variant.Outlined"
                                     @bind-Value="@appState.Config.AADSettings.RedirectUri"
                                     Placeholder="http://localhost" />
+                    </MudItem>
+
+                    <MudItem xs="12">
+                        <MudPaper Class="pa-4 mt-2" Outlined="true">
+                            <MudText Typo="Typo.subtitle1" Align="Align.Left">Application registration</MudText>
+                            <MudText Typo="Typo.body2" Align="Align.Left" Class="mt-1">
+                                PresenceLight signs in with an application registration in your own tenant. Creating one
+                                opens a browser for sign-in, then fills in and saves the identifiers above. Neither
+                                identifier is a secret and no client secret is created.
+                            </MudText>
+
+                            @if (EntraSetup.IsSupported)
+                            {
+                                <MudGrid Class="mt-2" Spacing="2">
+                                    <MudItem xs="12" sm="6">
+                                        <MudCheckBox @bind-Value="@entraMultiTenant" Label="Allow accounts in other organisations"></MudCheckBox>
+                                    </MudItem>
+                                    <MudItem xs="12" sm="6">
+                                        <MudCheckBox @bind-Value="@entraSkipAdminConsent" Label="Skip tenant-wide admin consent"></MudCheckBox>
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudButton Variant="Variant.Filled"
+                                                   Color="MudBlazor.Color.Primary"
+                                                   Disabled="@entraRunning"
+                                                   OnClick="@CreateRegistration">
+                                            @(entraRunning ? "Working..." : "Create app registration")
+                                        </MudButton>
+                                        @if (entraRunning)
+                                        {
+                                            <MudButton Class="ml-2" Variant="Variant.Outlined" OnClick="@CancelRegistration">Cancel</MudButton>
+                                        }
+                                    </MudItem>
+                                </MudGrid>
+                            }
+                            else
+                            {
+                                <MudAlert Severity="MudBlazor.Severity.Info" Class="mt-2">@EntraSetup.UnsupportedReason</MudAlert>
+                            }
+
+                            <MudText Typo="Typo.caption" Align="Align.Left" Class="mt-2">
+                                Equivalent command: @setupCommand
+                            </MudText>
+
+                            @if (entraPrompt != null)
+                            {
+                                <MudPaper Class="pa-3 mt-2" Outlined="true">
+                                    <MudText Typo="Typo.subtitle2" Align="Align.Left">Sign in to continue</MudText>
+                                    <MudText Typo="Typo.body2" Align="Align.Left">
+                                        Open the address below, enter the code, and sign in with an account that may
+                                        register applications. Setup continues on its own afterwards.
+                                    </MudText>
+                                    <MudGrid Class="mt-1" Spacing="2">
+                                        <MudItem xs="12" sm="8">
+                                            <MudTextField T="string" Label="Sign-in address" Variant="Variant.Outlined" ReadOnly="true" Value="@entraPrompt.Url" />
+                                        </MudItem>
+                                        <MudItem xs="12" sm="4">
+                                            <MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Primary" OnClick="@OpenDeviceUrl">Open sign-in page</MudButton>
+                                        </MudItem>
+                                        <MudItem xs="12" sm="8">
+                                            <MudTextField T="string" Label="Code" Variant="Variant.Outlined" ReadOnly="true" Value="@entraPrompt.Code" />
+                                        </MudItem>
+                                        <MudItem xs="12" sm="4">
+                                            <MudButton Variant="Variant.Outlined" Color="MudBlazor.Color.Primary" OnClick="@CopyDeviceCode">Copy code</MudButton>
+                                        </MudItem>
+                                    </MudGrid>
+                                </MudPaper>
+                            }
+
+                            @if (!string.IsNullOrEmpty(entraStatus))
+                            {
+                                <MudAlert Severity="@entraSeverity" Class="mt-2">@entraStatus</MudAlert>
+                            }
+
+                            @if (!string.IsNullOrEmpty(entraOutput))
+                            {
+                                <MudTextField T="string"
+                                              Label="Setup output"
+                                              Variant="Variant.Outlined"
+                                              Lines="10"
+                                              ReadOnly="true"
+                                              Class="mt-2"
+                                              Value="@entraOutput" />
+                            }
+
+                            <MudDivider Class="my-3" />
+
+                            <MudText Typo="Typo.subtitle2" Align="Align.Left">Add another tenant</MudText>
+                            <MudText Typo="Typo.body2" Align="Align.Left">
+                                A registration that allows other organisations can be consented to in a second tenant
+                                without creating a second registration. An administrator of that tenant opens the
+                                consent page once.
+                            </MudText>
+                            <MudGrid Class="mt-1" Spacing="2">
+                                <MudItem xs="12" sm="8">
+                                    <MudTextField Label="Tenant to consent in"
+                                                  Variant="Variant.Outlined"
+                                                  @bind-Value="@consentTenant"
+                                                  Placeholder="contoso.onmicrosoft.com or tenant GUID" />
+                                </MudItem>
+                                <MudItem xs="12" sm="4">
+                                    <MudButton Variant="Variant.Outlined"
+                                               Color="MudBlazor.Color.Primary"
+                                               OnClick="@GrantConsentInTenant">
+                                        Open consent page
+                                    </MudButton>
+                                </MudItem>
+                            </MudGrid>
+                        </MudPaper>
                     </MudItem>
 
                 </MudGrid>
@@ -186,6 +295,172 @@
     bool settingsSaved = false;
     string message;
     string localConfigurationPath;
+
+    bool entraMultiTenant;
+    bool entraSkipAdminConsent;
+    bool entraRunning;
+    string entraStatus = string.Empty;
+    string entraOutput = string.Empty;
+    MudBlazor.Severity entraSeverity = MudBlazor.Severity.Info;
+    string consentTenant = string.Empty;
+    EntraDeviceCodePrompt entraPrompt;
+    CancellationTokenSource entraCancellation;
+
+    string setupCommand => EntraSetup.DescribeCommand(BuildEntraRequest());
+
+    EntraSetupRequest BuildEntraRequest() => new EntraSetupRequest
+    {
+        MultiTenant = entraMultiTenant,
+        SkipAdminConsent = entraSkipAdminConsent,
+        SettingsPath = localConfigurationPath,
+
+        // Setup runs with no window of its own, so brokered sign-in cannot attach to one and fails
+        // with "A window handle must be configured". A device code needs no window at all.
+        UseDeviceCode = true
+    };
+
+    async Task CreateRegistration()
+    {
+        entraRunning = true;
+        entraOutput = string.Empty;
+        entraSeverity = MudBlazor.Severity.Info;
+        entraStatus = "Starting. The first run installs the Microsoft Graph modules, which takes a few minutes. A sign-in code will appear here.";
+
+        // Interactive sign-in and a first-run module install are both slow, so the operation is
+        // bounded rather than left to hang if sign-in is never completed.
+        entraCancellation = new CancellationTokenSource(TimeSpan.FromMinutes(15));
+
+        // Sign-in reports a code the operator has to enter, so output is shown as it arrives rather
+        // than only once setup has finished.
+        var progress = new Progress<string>(line =>
+        {
+            entraOutput += line + Environment.NewLine;
+
+            EntraDeviceCodePrompt prompt = EntraDeviceCodePrompt.Parse(line);
+
+            if (prompt != null)
+            {
+                entraPrompt = prompt;
+                entraStatus = "Waiting for you to sign in with the code below.";
+            }
+
+            InvokeAsync(StateHasChanged);
+        });
+
+        try
+        {
+            EntraSetupResult result = await EntraSetup.CreateRegistrationAsync(BuildEntraRequest(), progress, entraCancellation.Token);
+
+            entraOutput = result.Output;
+            entraStatus = result.Message;
+            entraSeverity = result.Succeeded ? MudBlazor.Severity.Success : MudBlazor.Severity.Warning;
+
+            if (result.Succeeded)
+            {
+                appState.Config.AADSettings.ClientId = result.ClientId;
+                appState.Config.AADSettings.TenantId = result.TenantId;
+
+                if (string.IsNullOrWhiteSpace(appState.Config.AADSettings.Instance))
+                {
+                    appState.Config.AADSettings.Instance = "https://login.microsoftonline.com/";
+                }
+
+                if (string.IsNullOrWhiteSpace(appState.Config.AADSettings.RedirectUri))
+                {
+                    appState.Config.AADSettings.RedirectUri = "http://localhost";
+                }
+
+                SaveSettings();
+                _logger.LogInformation("Entra application registration configured from the Settings page");
+            }
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Error creating the Entra application registration");
+            entraStatus = "Setup failed to run. The application log has the details.";
+            entraSeverity = MudBlazor.Severity.Error;
+        }
+        finally
+        {
+            entraRunning = false;
+            entraCancellation?.Dispose();
+            entraCancellation = null;
+        }
+    }
+
+    void CancelRegistration()
+    {
+        entraCancellation?.Cancel();
+    }
+
+    void OpenDeviceUrl()
+    {
+        if (entraPrompt == null)
+        {
+            return;
+        }
+
+        try
+        {
+            Helpers.OpenBrowser(entraPrompt.Url);
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Error opening the device sign-in page");
+            entraStatus = $"Could not open a browser. Go to {entraPrompt.Url} and enter {entraPrompt.Code}.";
+            entraSeverity = MudBlazor.Severity.Warning;
+        }
+    }
+
+    async Task CopyDeviceCode()
+    {
+        if (entraPrompt == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await js.InvokeVoidAsync("navigator.clipboard.writeText", entraPrompt.Code);
+            entraStatus = "Code copied. Enter it on the sign-in page.";
+            entraSeverity = MudBlazor.Severity.Info;
+        }
+        catch (Exception e)
+        {
+            // Clipboard access can be refused, and the code is still readable in the field above.
+            _logger.LogWarning(e, "Could not copy the device code to the clipboard");
+            entraStatus = $"Could not copy automatically. The code is {entraPrompt.Code}.";
+            entraSeverity = MudBlazor.Severity.Warning;
+        }
+    }
+
+    void GrantConsentInTenant()
+    {
+        try
+        {
+            string url = EntraSetupLinks.BuildAdminConsentUrl(
+                appState.Config.AADSettings.Instance,
+                consentTenant,
+                appState.Config.AADSettings.ClientId,
+                appState.Config.AADSettings.RedirectUri);
+
+            Helpers.OpenBrowser(url);
+
+            entraStatus = "The consent page was opened in your browser.";
+            entraSeverity = MudBlazor.Severity.Info;
+        }
+        catch (ArgumentException e)
+        {
+            entraStatus = e.Message;
+            entraSeverity = MudBlazor.Severity.Warning;
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Error opening the administrator consent page");
+            entraStatus = "The consent page could not be opened.";
+            entraSeverity = MudBlazor.Severity.Error;
+        }
+    }
 
     bool Monday;
     bool Tuesday;
