@@ -67,7 +67,6 @@ Presence Light would not be possible without the amazing work from the contribut
   - [LifxCloud](https://github.com/isaacrlevin/LifxCloudClient)
 - UI Components
   - [MudBlazor](https://www.mudblazor.com/)
-  - [Blazorise](https://github.com/Megabit/Blazorise)
   - [BlazorPro.Spinkit](https://github.com/EdCharbeneau/BlazorPro.Spinkit)
 - Backend
   - [MediatR](https://github.com/jbogard/MediatR)

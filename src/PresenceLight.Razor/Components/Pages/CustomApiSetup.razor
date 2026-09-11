@@ -45,14 +45,14 @@
                                 else if (setting.Name == "Uri")
                                 {                           
                                     <MudItem xs="4">
-                                        <Label>Uri</Label>
+                                        <label>Uri</label>
                                         <input type="text" id="@lab" value="@settingValue?.ToString()" @onchange="@((ChangeEventArgs e) => OnChange(e, setting, customApiSettingValue))" class="form-control" />
                                     </MudItem>
                                 }
                                 else if (setting.Name == "Body")
                                 {
                                     <MudItem xs="6">
-                                        <Label>Body</Label>
+                                        <label>Body</label>
                                         <input type="text" id="@body" value="@settingValue?.ToString()" @onchange="@((ChangeEventArgs e) => OnChange(e, setting, customApiSettingValue))" class="form-control" />
                                     </MudItem>
                                 }

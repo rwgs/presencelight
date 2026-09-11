@@ -26,7 +26,7 @@
                             <MudText Typo=Typo.h6>@Helpers.HumanifyText(lightStatus.Name.Replace("Status", "").Replace("Availability", "").Replace("Activity", "")) Color</MudText>
                         </MudItem>
                         <MudItem xs="4">
-                            <ColorEdit Color="@status.Color" @onchange="@((ChangeEventArgs e) => ChangeStatusColor(e, status))" />
+                            <input type="color" class="form-control" value="@status.Color" @onchange="@((ChangeEventArgs e) => ChangeStatusColor(e, status))" />
                         </MudItem>
                         <MudItem xs="4">
                             <MudCheckBox T="bool" Checked="@status.Disabled" ValueChanged="@(x => StatusDisabledOnCheck(x, status))" Label="Off?"></MudCheckBox>

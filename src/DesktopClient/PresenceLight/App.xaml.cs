@@ -5,10 +5,6 @@ using System.Globalization;
 using System.IO;
 using System.Windows;
 
-using Blazorise;
-using Blazorise.Bootstrap;
-using Blazorise.Icons.FontAwesome;
-
 using Microsoft.ApplicationInsights.Extensibility;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -147,13 +143,6 @@ namespace PresenceLight
             services.AddHttpClient();
             services.AddHttpContextAccessor();
             services.AddWpfBlazorWebView();
-
-            services.AddBlazorise(options =>
-                 {
-                     options.Immediate = true;
-                 })
-    .AddBootstrapProviders()
-    .AddFontAwesomeIcons();
 
             services.AddMediatR(cfg =>
             {
